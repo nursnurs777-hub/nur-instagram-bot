@@ -46,7 +46,7 @@ class Settings:
     store_instagram: str = field(default_factory=lambda: _env("STORE_INSTAGRAM", "@nurelectronics.kz"))
     store_address: str = field(default_factory=lambda: _env("STORE_ADDRESS", "Астана, ул. Төле би, 52"))
     store_hours: str = field(default_factory=lambda: _env("STORE_HOURS", "ежедневно с 10:00 до 20:00"))
-    store_whatsapp: str = field(default_factory=lambda: _env("STORE_WHATSAPP"))  # например https://wa.me/7707...
+    store_whatsapp: str = field(default_factory=lambda: _env("STORE_WHATSAPP", "https://wa.me/77028081111"))
 
     # Instagram / Meta
     ig_verify_token: str = field(default_factory=lambda: _env("IG_VERIFY_TOKEN"))

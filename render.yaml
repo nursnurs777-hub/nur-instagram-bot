@@ -35,8 +35,8 @@ services:
         sync: false
       - key: ALLOWED_USER_IDS     # пока тестируете — IGSID тестировщиков через запятую; пусто = отвечать всем
         sync: false
-      - key: STORE_WHATSAPP     # например https://wa.me/7701XXXXXXX
-        sync: false
+      - key: STORE_WHATSAPP
+        value: https://wa.me/77028081111
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5-5
       - key: FOLLOWUP_ENABLED
