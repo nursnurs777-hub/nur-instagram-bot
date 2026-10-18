@@ -317,7 +317,7 @@ class Catalog:
                 self.products.extend(parse_retail_sheet(name, rows))
 
     # -------- поиск по всему каталогу
-    def search(self, query: str, limit: int = 12) -> list[Product]:
+    def search(self, query: str, limit: int = 8) -> list[Product]:
         q = tokens(query)
         if not q:
             return []
