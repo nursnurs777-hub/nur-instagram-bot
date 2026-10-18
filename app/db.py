@@ -89,6 +89,11 @@ class Store:
             rows = c.execute(select(messages).where(messages.c.id.in_(ids))).mappings().all()
             return [dict(r) for r in rows]
 
+    def delete_conversation(self, user_id: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(messages.delete().where(messages.c.user_id == user_id))
+            c.execute(conversations.delete().where(conversations.c.user_id == user_id))
+
     def update_message_content(self, message_id: int, content: str) -> None:
         with self.engine.begin() as c:
             c.execute(update(messages).where(messages.c.id == message_id).values(content=content))

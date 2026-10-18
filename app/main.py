@@ -15,6 +15,7 @@ from .db import Store
 from .instagram import InstagramClient, parse_events, verify_signature
 from .processor import Processor
 from .sheets import CatalogProvider
+from .testchat import router as testchat_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=f"{settings.store_name} AI", lifespan=lifespan)
+app.include_router(testchat_router)
 
 
 @app.get("/health")
