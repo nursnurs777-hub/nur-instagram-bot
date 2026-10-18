@@ -87,7 +87,7 @@ class FakeIG:
     async def typing(self, *a, **k):
         pass
 
-    async def download(self, url):
+    async def download(self, url, max_bytes=None):
         return None
 
 

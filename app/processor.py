@@ -11,6 +11,7 @@ from .agent import IncomingImage, SalesAgent
 from .config import Settings
 from .db import Store, utcnow
 from .instagram import Event, InstagramClient
+from .media import describe, shrink
 from .sheets import CatalogProvider
 
 log = logging.getLogger(__name__)
@@ -57,7 +58,9 @@ class Processor:
         self.catalogs = catalogs
         self._debounce: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
-        self._pending_images: dict[str, list[str]] = {}
+        # фото ждут обработки: (id сообщения в БД, ссылка Instagram). Ссылки живут только в памяти.
+        self._pending_images: dict[str, list[tuple[int, str]]] = {}
+        self._img_sem = asyncio.Semaphore(max(1, settings.image_concurrency))
         self._bg: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------ утилиты
@@ -100,7 +103,10 @@ class Processor:
         await self._db(self.store.update_conv, ev.user_id, **fields)
         imgs = [a.url for a in ev.attachments if a.type == "image" and a.url]
         if imgs:
-            self._pending_images.setdefault(ev.user_id, []).extend(imgs)
+            queue = self._pending_images.setdefault(ev.user_id, [])
+            for url in imgs:
+                if len(queue) < self.s.max_images_per_message:
+                    queue.append((added, url))
         self._schedule(ev.user_id)
 
     def _schedule(self, user_id: str, delay: float | None = None) -> None:
@@ -160,13 +166,8 @@ class Processor:
             pending = await self._db(self.store.unprocessed, user_id)
             if not pending and not followup:
                 return
+            images = await self._prepare_images(user_id)  # до чтения истории: описания фото попадут в неё
             history = await self._db(self.store.history, user_id, self.s.history_limit)
-
-            images: list[IncomingImage] = []
-            for url in self._pending_images.pop(user_id, [])[:4]:
-                got = await self.ig.download(url)
-                if got:
-                    images.append(IncomingImage(*got))
 
             extra_system = extra_note = None
             if followup:
@@ -215,6 +216,40 @@ class Processor:
             if followup:
                 fields["followup_sent"] = True
             await self._db(self.store.update_conv, user_id, **fields)
+
+    # ------------------------------------------------------------------ фото
+    async def _prepare_images(self, user_id: str) -> list[IncomingImage]:
+        """Скачивает фото в память, уменьшает, описывает текстом и сохраняет в БД только текст.
+
+        Возвращает уменьшенные картинки для текущего ответа; после ответа они просто выбрасываются.
+        """
+        out: list[IncomingImage] = []
+        for msg_id, url in self._pending_images.pop(user_id, []):
+            async with self._img_sem:  # не больше N фото одновременно на весь сервер
+                note = await self._process_one_image(url, out)
+            await self._db(self._replace_photo_note, msg_id, note)
+        return out
+
+    async def _process_one_image(self, url: str, out: list[IncomingImage]) -> str:
+        got = await self.ig.download(url, max_bytes=self.s.max_image_mb * 1024 * 1024)
+        if not got:
+            return "[фото: не удалось загрузить или файл слишком большой]"
+        small = await asyncio.to_thread(shrink, got[0])
+        del got  # исходный файл больше не нужен
+        if not small:
+            return "[фото: файл не распознан как изображение]"
+        out.append(IncomingImage(*small))
+        text = await describe(self.agent.client, self.s.vision_model, small[0], small[1])
+        return f"[фото: {text}]" if text else "[клиент отправил фото — описание недоступно]"
+
+    def _replace_photo_note(self, msg_id: int, note: str) -> None:
+        rows = [m for m in self.store.history_by_ids([msg_id])]
+        if not rows:
+            return
+        content = rows[0]["content"]
+        placeholder = ATTACHMENT_NOTES["image"]
+        content = content.replace(placeholder, note, 1) if placeholder in content else f"{note} {content}"
+        self.store.update_message_content(msg_id, content)
 
     # ------------------------------------------------------------------ планировщик
     async def scheduler(self) -> None:

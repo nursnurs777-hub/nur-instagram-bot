@@ -62,6 +62,10 @@ class Settings:
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
     anthropic_model: str = field(default_factory=lambda: _env("ANTHROPIC_MODEL", "claude-sonnet-5-5"))
     max_tokens: int = field(default_factory=lambda: _int("MAX_TOKENS", 1200))
+    vision_model: str = field(default_factory=lambda: _env("VISION_MODEL", "claude-haiku-5-5"))
+    max_images_per_message: int = field(default_factory=lambda: _int("MAX_IMAGES_PER_MESSAGE", 4))
+    max_image_mb: int = field(default_factory=lambda: _int("MAX_IMAGE_MB", 8))
+    image_concurrency: int = field(default_factory=lambda: _int("IMAGE_CONCURRENCY", 2))
     web_search_enabled: bool = field(default_factory=lambda: _bool("WEB_SEARCH_ENABLED", True))
     web_search_tool_type: str = field(default_factory=lambda: _env("WEB_SEARCH_TOOL_TYPE", "web_search_20250305"))
     web_search_domains: list[str] = field(

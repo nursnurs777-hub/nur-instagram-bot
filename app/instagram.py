@@ -124,13 +124,23 @@ class InstagramClient:
         except Exception as e:  # необязательная функция
             log.debug("typing indicator failed: %s", e)
 
-    async def download(self, url: str, max_bytes: int = 5 * 1024 * 1024) -> tuple[bytes, str] | None:
+    async def download(self, url: str, max_bytes: int = 8 * 1024 * 1024) -> tuple[bytes, str] | None:
+        """Скачивает вложение в память (не на диск) и обрывает загрузку, если файл больше max_bytes."""
         try:
-            r = await self.http.get(url, follow_redirects=True)
-            if r.status_code != 200 or len(r.content) > max_bytes:
-                return None
-            ctype = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-            return r.content, ctype
+            async with self.http.stream("GET", url, follow_redirects=True) as r:
+                if r.status_code != 200:
+                    return None
+                if int(r.headers.get("content-length") or 0) > max_bytes:
+                    log.info("Вложение больше %s байт — пропускаем", max_bytes)
+                    return None
+                buf = bytearray()
+                async for chunk in r.aiter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) > max_bytes:
+                        log.info("Вложение больше %s байт — пропускаем", max_bytes)
+                        return None
+                ctype = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+                return bytes(buf), ctype
         except Exception as e:
             log.warning("Не удалось скачать вложение: %s", e)
             return None

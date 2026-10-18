@@ -74,15 +74,24 @@ class Store:
 
     # ------------------------------------------------------------- сообщения
     def add_message(self, user_id: str, role: str, content: str, mid: str | None = None,
-                    processed: bool = True, at: datetime | None = None) -> bool:
-        """False — если сообщение с таким mid уже есть (повтор вебхука)."""
+                    processed: bool = True, at: datetime | None = None) -> int | None:
+        """id новой строки; None — если сообщение с таким mid уже есть (повтор вебхука)."""
         try:
             with self.engine.begin() as c:
-                c.execute(insert(messages).values(user_id=user_id, role=role, content=content, mid=mid,
-                                                  processed=processed, created_at=at or utcnow()))
-            return True
+                res = c.execute(insert(messages).values(user_id=user_id, role=role, content=content, mid=mid,
+                                                        processed=processed, created_at=at or utcnow()))
+            return int(res.inserted_primary_key[0])
         except IntegrityError:
-            return False
+            return None
+
+    def history_by_ids(self, ids: list[int]) -> list[dict]:
+        with self.engine.begin() as c:
+            rows = c.execute(select(messages).where(messages.c.id.in_(ids))).mappings().all()
+            return [dict(r) for r in rows]
+
+    def update_message_content(self, message_id: int, content: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(update(messages).where(messages.c.id == message_id).values(content=content))
 
     def has_mid(self, mid: str) -> bool:
         with self.engine.begin() as c:
