@@ -1,0 +1,46 @@
+# Render Blueprint: New → Blueprint → выберите этот репозиторий.
+# Секреты (sync: false) Render попросит ввести при создании.
+services:
+  - type: web
+    name: kopkop-ai
+    runtime: python
+    plan: starter            # бесплатный план засыпает через 15 мин простоя — для бота не подходит
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kopkop-db
+          property: connectionString
+      - key: IG_VERIFY_TOKEN
+        generateValue: true
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: IG_APP_SECRET
+        sync: false
+      - key: IG_ACCESS_TOKEN
+        sync: false
+      - key: IG_ACCOUNT_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SPREADSHEET_ID
+        value: 10DffuB-MxD2ntIxL6-ix2xHtHHMQ34tFgP-oH37req8
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: ALLOWED_USER_IDS     # пока тестируете — IGSID тестировщиков через запятую; пусто = отвечать всем
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5-5
+      - key: FOLLOWUP_ENABLED
+        value: "false"
+
+databases:
+  - name: kopkop-db
+    plan: basic-256mb        # бесплатная БД Render удаляется через 30 дней
+    region: frankfurt

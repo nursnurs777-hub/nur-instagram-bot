@@ -1,0 +1,265 @@
+## Sheet name: iphone
+Модель,Память,Тип SIM,Цена,Показать
+iPhone 17,256GB,1 SIM + eSIM,480 000 ₸,Да
+iPhone 17 Pro,256GB,1 SIM + eSIM,630 000 ₸,Да
+iPhone 17 Pro,512GB,1 SIM + eSIM,740 000 ₸,Да
+iPhone 17 Pro,1TB,1 SIM + eSIM,840 000 ₸,Да
+iPhone 17 Pro Max,256GB,1 SIM + eSIM,690 000 ₸,Да
+iPhone 17 Pro Max,512GB,1 SIM + eSIM,790 000 ₸,Да
+iPhone 17 Pro Max,1TB,1 SIM + eSIM,910 000 ₸,Да
+iPhone 17 Pro Max,2TB,1 SIM + eSIM,1 030 000 ₸,Да
+iPhone 17e,256GB,только eSIM,380 000 ₸,Да
+iPhone 17 Air,256GB,только eSIM,475 000 ₸,Да
+iPhone 17 Air,512GB,только eSIM,540 000 ₸,Да
+iPhone 17,256GB,только eSIM,470 000 ₸,Да
+iPhone 17 Pro,256GB,только eSIM,590 000 ₸,Да
+iPhone 17 Pro,512GB,только eSIM,690 000 ₸,Да
+iPhone 17 Pro,1TB,только eSIM,780 000 ₸,Да
+iPhone 17 Pro Max,256GB,только eSIM,630 000 ₸,Да
+iPhone 17 Pro Max,512GB,только eSIM,730 000 ₸,Да
+iPhone 17 Pro Max,1TB,только eSIM,830 000 ₸,Да
+iPhone 17 Pro Max,2TB,только eSIM,990 000 ₸,Да
+iPhone 16 Pro Max,512GB,,740 000 ₸,Да
+iPhone 16,128GB,,405 000 ₸,Да
+iPhone 18 Pro,256GB,1 SIM + eSIM,750 000 ₸,Да
+iPhone 18 Pro,512GB,1 SIM + eSIM,900 000 ₸,Да
+iPhone 18 Pro,1TB,1 SIM + eSIM,1 190 000 ₸,Да
+iPhone 18 Pro,2TB,1 SIM + eSIM,1 600 000 ₸,Да
+iPhone 18 Pro Max,256GB,1 SIM + eSIM,830 000 ₸,Да
+iPhone 18 Pro Max,512GB,1 SIM + eSIM,990 000 ₸,Да
+iPhone 18 Pro Max,1TB,1 SIM + eSIM,1 200 000 ₸,Да
+iPhone 18 Pro Max,2TB,1 SIM + eSIM,1 500 000 ₸,Да
+iPhone Duo,256GB,1 SIM + eSIM,,Да
+iPhone Duo,512GB,1 SIM + eSIM,,Да
+iPhone Duo,1TB,1 SIM + eSIM,,Да
+iPhone Duo,2TB,1 SIM + eSIM,,Да
+iPhone 18 Pro,256GB,только eSIM,₸710 000,Да
+iPhone 18 Pro,512GB,только eSIM,₸820 000,Да
+iPhone 18 Pro,1TB,только eSIM,₸1 050 000,Да
+iPhone 18 Pro,2TB,только eSIM,₸1 450 000,Да
+iPhone 18 Pro Max,256GB,только eSIM,₸810 000,Да
+iPhone 18 Pro Max,512GB,только eSIM,₸950 000,Да
+iPhone 18 Pro Max,1TB,только eSIM,₸1 150 000,Да
+iPhone 18 Pro Max,2TB,только eSIM,₸1 400 000,Да
+iPhone Duo,256GB,только eSIM,,Да
+iPhone Duo,512GB,только eSIM,,Да
+iPhone Duo,1TB,только eSIM,,Да
+iPhone Duo,2TB,только eSIM,,Да
+
+## Sheet name: iPad
+Модель,Память,Подключение,Цена,Показать
+iPad A17 Pro,128GB,Wi‑Fi,285 000 ₸,Да
+iPad A16,256GB,Wi‑Fi,265 000 ₸,Да
+iPad Air 11 (M4),128GB,Wi-Fi ,350 000 ₸,Да
+iPad Air 11 (M4),256BG,Wi-Fi,400 000 ₸,Да
+iPad Air 13” (M4),128GB,Wi‑Fi,440 000 ₸,Да
+iPad Air 13” (M3),256GB,Wi‑Fi,475 000 ₸,Да
+iPad Pro 11” (M5),256GB,Wi‑Fi,550 000 ₸,Да
+
+,,
+
+## Sheet name: MacBook
+Модель,Конфигурация,Цена,Показать
+MacBook Neo,8/256GB,350 000 ₸,Да
+MacBook Air 13” M5,16/512GB,680 000 ₸,Да
+MacBook Air 13” M5,16/1TB,730 000 ₸,Да
+MacBook Air 13” M4,16/1TB,710 000 ₸,Да
+MacBook Air 15” M5,16/512GB,750 000 ₸,Да
+MacBook Pro 14” M5,16/1TB,940 000 ₸,Да
+MacBook Pro 14” M4 Pro,1TB,1 180 000 ₸,Да
+MacBook Pro 14” M5 Pro,24/2TB,1 380 000 ₸,Да
+
+## Sheet name: Apple Watch
+Модель,Цена,Показать
+Apple Watch 10 46mm,160 000 ₸,Да
+Apple Watch 11 42mm,170 000 ₸,Да
+Apple Watch 11 46mm,185 000 ₸,Да
+Whoop Peak,135 000 ₸,Да
+Whoop Life,190 000 ₸,Да
+Google Fitbit Air,75000,Да
+Apple Watch SE 40mm,125000,Да
+Apple Watch SE 44mm,140000,Да
+
+## Sheet name: Marshall
+Модель,Цена,Показать
+Marshall Major V,59 000 ₸,Да
+
+## Sheet name: Камеры
+Модель,Цена,Показать
+DJI Osmo Pocket 4 Standard,255 000 ₸,Да
+DJI Osmo Pocket 4 Creator Combo,295 000 ₸,Да
+DJI Osmo Pocket 3 Standard,210 000 ₸,Да
+DJI Osmo Pocket 3 Creator Combo,260 000 ₸,Да
+DJI Osmo Nano,175 000 ₸,Да
+DJI Osmo Pocket 4P Standard,375 000 ₸,Да
+DJI Osmo Pocket 4P Combo,395 000 ₸,Да
+DJI Osmo Action 6,230 000 ₸,Да
+Insta360 Luna Ultra,390 000 ₸,Да
+Canon G7X Mark III,600 000 ₸,Да
+
+## Sheet name: Петлички
+Модель,Цена,Показать
+DJI Mic Mini Single,45 000 ₸,Да
+DJI Mic Mini 2 Dual Mic,60 000 ₸,Да
+DJI Mic 3 (2TX + 1RX) Dual Mic,145 000 ₸,Да
+
+## Sheet name: Дроны
+Модель,Цена,Показать
+Mavic 4 Pro (RC2) Fly More Combo,1 370 000 ₸,Да
+Mavic 4 Pro (RC2 Pro) Creator Combo 512GB,1 800 000 ₸,Да
+DJI Air 3S Fly More Combo,780 000 ₸,Да
+DJI Mini 5 Pro Fly More Combo Plus,600 000 ₸,Да
+DJI Mini 3 Fly More,335 000 ₸,Да
+DJI Mini 3 (RC2),245 000 ₸,Да
+DJI Avata 360,430 000 ₸,Да
+DJI Avata 360 Fly More Combo,560 000 ₸,Да
+Lito X1,360 000 ₸,Да
+
+## Sheet name: AirPods
+Модель,Цена,Показать
+AirPods 4,60 000 ₸,Да
+AirPods Pro 3,100 000 ₸,Да
+AirPods Max 2,260 000 ₸,Да
+AirPods 5,75 000 ₸,Да
+
+## Sheet name: Другое
+Модель,Цена,Показать
+Ray-Ban Meta Photochromic Gen 2,265 000 ₸,Да
+Яндекс Станция Lite,28 000 ₸,Да
+
+## Sheet name: Игры
+Модель,Цена,Показать
+PlayStation 5 Slim,330 000 ₸,Да
+Nintendo Switch 2,320 000 ₸,Да
+
+## Sheet name: Закуп б/у
+ID,Категория,Модель,Память,Размер,Тип SIM,Цена закупа до,Показывать,Порядок,Комментари
+ip11-64,iPhone,11,64GB,,,30 000 ₸,Да,10
+ip11-128,iPhone,11,128GB,,,40 000 ₸,Да,20
+ip11-256,iPhone,11,256GB,,,50 000 ₸,Да,30
+ip11pro-64,iPhone,11 Pro,64GB,,,50 000 ₸,Да,40
+ip11pro-256,iPhone,11 Pro,256GB,,,60 000 ₸,Да,50
+ip11promax-64,iPhone,11 Pro Max,64GB,,,70 000 ₸,Да,60
+ip11promax-256,iPhone,11 Pro Max,256GB,,,85 000 ₸,Да,70
+ip12-64,iPhone,12,64GB,,,50 000 ₸,Да,80
+ip12-128,iPhone,12,128GB,,,65 000 ₸,Да,90
+ip12mini-64,iPhone,12 Mini,64GB,,,40 000 ₸,Да,100
+ip12mini-128,iPhone,12 Mini,128GB,,,50 000 ₸,Да,110
+ip12pro-128,iPhone,12 Pro,128GB,,,60 000 ₸,Да,120
+ip12pro-512,iPhone,12 Pro,512GB,,,80 000 ₸,Да,130
+ip12promax-128,iPhone,12 Pro Max,128GB,,,75 000 ₸,Да,140
+ip12promax-256,iPhone,12 Pro Max,256GB,,,85 000 ₸,Да,150
+ip12promax-512,iPhone,12 Pro Max,512GB,,,100 000 ₸,Да,160
+ip13-128,iPhone,13,128GB,,,80 000 ₸,Да,170
+ip13-256,iPhone,13,256GB,,,100 000 ₸,Да,180
+ip13mini-128,iPhone,13 mini,128GB,,,65 000 ₸,Да,190
+ip13mini-256,iPhone,13 mini,256GB,,,75 000 ₸,Да,200
+ip13pro-128,iPhone,13 Pro,128GB,,,120 000 ₸,Да,210
+ip13pro-256,iPhone,13 Pro,256GB,,,140 000 ₸,Да,220
+ip13pro-512,iPhone,13 Pro,512GB,,,165 000 ₸,Да,230
+ip13pro-1tb,iPhone,13 Pro,1TB,,,170 000 ₸,Да,240
+ip13promax-256,iPhone,13 Pro Max,256GB,,,150 000 ₸,Да,250
+ip13promax-512,iPhone,13 Pro Max,512GB,,,180 000 ₸,Да,260
+ip13promax-1tb,iPhone,13 Pro Max,1TB,,,195 000 ₸,Да,270
+ip14-128,iPhone,14,128GB,,,105 000 ₸,Да,280
+ip14-256,iPhone,14,256GB,,,115 000 ₸,Да,290
+ip14plus-128,iPhone,14 Plus,128GB,,,130 000 ₸,Да,300
+ip14plus-256,iPhone,14 Plus,256GB,,,150 000 ₸,Да,310
+ip14pro-128,iPhone,14 Pro,128GB,,,170 000 ₸,Да,320
+ip14pro-256,iPhone,14 Pro,256GB,,,185 000 ₸,Да,330
+ip14pro-512,iPhone,14 Pro,512GB,,,205 000 ₸,Да,340
+ip14pro-1tb,iPhone,14 Pro,1TB,,,215 000 ₸,Да,350
+ip14promax-128,iPhone,14 Pro Max,128GB,,,200 000 ₸,Да,360
+ip14promax-256,iPhone,14 Pro Max,256GB,,,220 000 ₸,Да,370
+ip14promax-512,iPhone,14 Pro Max,512GB,,,230 000 ₸,Да,380
+ip14promax-1tb,iPhone,14 Pro Max,1TB,,,245 000 ₸,Да,390
+ip15-128,iPhone,15,128GB,,,170 000 ₸,Да,400
+ip15-256,iPhone,15,256GB,,,190 000 ₸,Да,410
+ip15plus-128,iPhone,15 Plus,128GB,,,200 000 ₸,Да,420
+ip15plus-256,iPhone,15 Plus,256GB,,,220 000 ₸,Да,430
+ip15pro-128,iPhone,15 Pro,128GB,,,200 000 ₸,Да,440
+ip15pro-256,iPhone,15 Pro,256GB,,,230 000 ₸,Да,450
+ip15pro-512,iPhone,15 Pro,512GB,,,270 000 ₸,Да,460
+ip15pro-1tb,iPhone,15 Pro,1TB,,,290 000 ₸,Да,470
+ip15promax-256,iPhone,15 Pro Max,256GB,,,250 000 ₸,Да,480
+ip15promax-512,iPhone,15 Pro Max,512GB,,,280 000 ₸,Да,490
+ip15promax-1tb,iPhone,15 Pro Max,1TB,,,320 000 ₸,Да,500
+ip16-128,iPhone,16,128GB,,,220 000 ₸,Да,510
+ip16-256,iPhone,16,256GB,,,240 000 ₸,Да,520
+ip16plus-128,iPhone,16 Plus,128GB,,,240 000 ₸,Да,530
+ip16plus-256,iPhone,16 Plus,256GB,,,260 000 ₸,Да,540
+ip16pro-128,iPhone,16 Pro,128GB,,,300 000 ₸,Да,550
+ip16pro-256,iPhone,16 Pro,256GB,,,320 000 ₸,Да,560
+ip16pro-512,iPhone,16 Pro,512GB,,,350 000 ₸,Да,570
+ip16pro-1tb,iPhone,16 Pro,1TB,,,400 000 ₸,Да,580
+ip16promax-256,iPhone,16 Pro Max,256GB,,,360 000 ₸,Да,590
+ip16promax-512,iPhone,16 Pro Max,512GB,,,400 000 ₸,Да,600
+ip16promax-1tb,iPhone,16 Pro Max,1TB,,,430 000 ₸,Да,610
+ip17esim-256,iPhone,17,256GB,,eSIM,320 000 ₸,Да,620
+ip17esim-512,iPhone,17,512GB,,eSIM,360 000 ₸,Да,630
+ip17airesim-256,iPhone,17 Air,256GB,,eSIM,320 000 ₸,Да,640
+ip17airesim-512,iPhone,17 Air,512GB,,eSIM,370 000 ₸,Да,650
+ip17proesim-256,iPhone,17 Pro,256GB,,eSIM,420 000 ₸,Да,660
+ip17proesim-512,iPhone,17 Pro,512GB,,eSIM,470 000 ₸,Да,670
+ip17proesim-1tb,iPhone,17 Pro,1TB,,eSIM,550 000 ₸,Да,680
+ip17promaxesim-256,iPhone,17 Pro Max,256GB,,eSIM,450 000 ₸,Да,690
+ip17promaxesim-512,iPhone,17 Pro Max,512GB,,eSIM,490 000 ₸,Да,700
+ip17promaxesim-1tb,iPhone,17 Pro Max,1TB,,eSIM,550 000 ₸,Да,710
+ip17promaxesim-2tb,iPhone,17 Pro Max,2TB,,eSIM,600 000 ₸,Да,720
+ip17e-256,iPhone,17E,256GB,,,230 000 ₸,Да,730
+ip17-256,iPhone,17,256GB,,SIM + eSIM,340 000 ₸,Да,740
+ip17-512,iPhone,17,512GB,,SIM + eSIM,400 000 ₸,Да,750
+ip17pro-256,iPhone,17 Pro,256GB,,SIM + eSIM,440 000 ₸,Да,760
+ip17pro-512,iPhone,17 Pro,512GB,,SIM + eSIM,490 000 ₸,Да,770
+ip17pro-1tb,iPhone,17 Pro,1TB,,SIM + eSIM,540 000 ₸,Да,780
+ip17promax-256,iPhone,17 Pro Max,256GB,,SIM + eSIM,420 000 ₸,Да,790
+ip17promax-512,iPhone,17 Pro Max,512GB,,SIM + eSIM,500 000 ₸,Да,800
+ip17promax-1tb,iPhone,17 Pro Max,1TB,,SIM + eSIM,520 000 ₸,Да,810
+ip17promax-2tb,iPhone,17 Pro Max,2TB,,SIM + eSIM,630 000 ₸,Да,820
+aw-se2-40,Apple Watch,SE 2,,40 мм,,35 000 ₸,Да,830
+aw-se2-44,Apple Watch,SE 2,,44 мм,,45 000 ₸,Да,840
+aw-s6-40,Apple Watch,Series 6,,40 мм,,30 000 ₸,Да,850
+aw-s6-44,Apple Watch,Series 6,,44 мм,,40 000 ₸,Да,860
+aw-s7-41,Apple Watch,Series 7,,41 мм,,40 000 ₸,Да,870
+aw-s7-45,Apple Watch,Series 7,,45 мм,,50 000 ₸,Да,880
+aw-s8-41,Apple Watch,Series 8,,41 мм,,50 000 ₸,Да,890
+aw-s8-45,Apple Watch,Series 8,,45 мм,,60 000 ₸,Да,900
+aw-s9-41,Apple Watch,Series 9,,41 мм,,70 000 ₸,Да,910
+aw-s9-45,Apple Watch,Series 9,,45 мм,,85 000 ₸,Да,920
+aw-ultra2-49,Apple Watch,Ultra 2,,49 мм,,170 000 ₸,Да,930
+
+## Sheet name: dyson
+Продукт,Модель,Цвет,Цена,Показать
+Стайлеры,Co-anda HS09,,295 000 ₸,Нет
+Стайлеры,Airwrap HS08,,,Нет
+Стайлеры,Dyson Airwrap ID Long HS08,Prussian Blue,225 000 ₸,Да
+Стайлеры,Dyson Airwrap ID Long HS08,Vinca Blue,225 000 ₸,Да
+Стайлеры,Dyson Airwrap ID Long HS08,Ceramik Patina,235 000 ₸,Да
+Стайлеры,Dyson Airwrap ID Long HS08,Ceramic Pink,235 000 ₸,Да
+Стайлеры,Dyson Airwrap ID Long HS08,Amber Silk (NEW!),235 000 ₸,Да
+Стайлеры,Dyson Airwrap ID Long HS08,Red Velvet/Gold,235 000 ₸,Да
+Стайлеры,Dyson Airwrap ID Long HS08,Ceramic Apricot/Topaz,235 000 ₸,Да
+Стайлеры,Dyson Airwrap Co-anda 2X HS09,"Amber Silk, Ceramik Pink, Jasper Plum, Ceramic Apricot",280 000 ₸,Да
+Стайлеры,Dyson Airwrap Co-anda 2X HS09 2026,"Jasper Plum, Ceramik Pink",300 000 ₸,Да
+Выпрямители,Dyson Airstrait HT 01,Nickel Cooper / Prussian Blue,190 000 ₸,Да
+Выпрямители,Dyson Airstrait HT 01 (с кейсом),Pink / Bronze / Jasper Plum / Amber Silk,210 000 ₸,Нет
+Фены,Dyson Supersonic HD-17,Фен c ИИ,220 000 ₸,Нет
+Выпрямители,Dyson Corrale HS07,Bronze,195 000 ₸,Нет
+Фены,Supersonic,,,Нет
+Выпрямители,Airstrait,,,Нет
+Выпрямители,Corrale,,,Нет
+Беспроводные пылесосы,V8,,,Нет
+Беспроводные пылесосы,V10,,,Нет
+Беспроводные пылесосы,V11,,,Нет
+Беспроводные пылесосы,V12,,,Нет
+Беспроводные пылесосы,V15,,,Нет
+Беспроводные пылесосы,Gen5detect,,,Нет
+Беспроводные пылесосы,V16 Piston,,,Нет
+Моющие устройства для пола,WashG1,,,Нет
+Роботы-пылесосы,360 Vis Nav,,,Нет
+Очистители воздуха,Purifier,,,Нет
+Очистители воздуха,Big+Quiet,,,Нет
+Очистители воздуха,HushJet,,,Нет
+Очистители + увлажнители,Purifier Humidify+Cool,,,Нет
+Очистители + обогреватели,Purifier Hot+Cool,,,Нет
+Наушники,OnTrac,,,Нет
