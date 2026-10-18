@@ -72,6 +72,10 @@ class Settings:
     google_service_account_json: str = field(default_factory=lambda: _env("GOOGLE_SERVICE_ACCOUNT_JSON"))
     google_api_key: str = field(default_factory=lambda: _env("GOOGLE_API_KEY"))
     tradein_sheet: str = field(default_factory=lambda: _env("TRADEIN_SHEET", "Закуп б/у"))
+    # запасной список листов для открытой таблицы без ключа («имя:gid,…»); gid виден в адресе листа: …#gid=101
+    sheet_gids: str = field(default_factory=lambda: _env(
+        "SHEET_GIDS", "iphone:0,iPad:101,MacBook:102,Apple Watch:201,Marshall:202,Камеры:203,Петлички:204,"
+                      "Дроны:205,AirPods:206,Другое:207,Игры:208,Закуп б/у:301,dyson:401"))
     catalog_cache_seconds: int = field(default_factory=lambda: _int("CATALOG_CACHE_SECONDS", 300))
     price_file: str = field(default_factory=lambda: _env("PRICE_FILE"))  # офлайн-режим для разработки
 

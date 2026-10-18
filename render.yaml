@@ -31,8 +31,6 @@ services:
         sync: false
       - key: SPREADSHEET_ID
         value: 10DffuB-MxD2ntIxL6-ix2xHtHHMQ34tFgP-oH37req8
-      - key: GOOGLE_SERVICE_ACCOUNT_JSON
-        sync: false
       - key: ALLOWED_USER_IDS     # пока тестируете — IGSID тестировщиков через запятую; пусто = отвечать всем
         sync: false
       - key: STORE_WHATSAPP

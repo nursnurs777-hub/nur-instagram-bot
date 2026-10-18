@@ -45,14 +45,14 @@ git remote add origin https://github.com/<вы>/nur-ai.git
 git push -u origin main
 ```
 
-### 2. Доступ к Google Sheets (сервисный аккаунт)
+### 2. Доступ к Google Sheets
 
-1. Откройте [console.cloud.google.com](https://console.cloud.google.com), создайте проект и включите в нём **Google Sheets API**.
-2. Перейдите в IAM → Service Accounts → Create, затем Keys → Add key → JSON и скачайте файл.
-3. В таблице «Price NUR» нажмите «Настройки доступа» и добавьте email сервисного аккаунта (`…@….iam.gserviceaccount.com`) с правом **Читатель**.
-4. Содержимое JSON-файла целиком вставьте в переменную `GOOGLE_SERVICE_ACCOUNT_JSON`.
+Ключ не нужен, если таблица открыта: «Настройки доступа» → «Все, у кого есть ссылка» → **Читатель**. Бот сам находит листы и скачивает их как CSV. Новые листы подхватываются автоматически.
 
-Есть и более простой способ: открыть таблицу «всем, у кого есть ссылка», создать API-ключ и указать его в `GOOGLE_API_KEY`. Но тогда прайс сможет посмотреть любой, у кого есть ссылка.
+Если таблицу нужно закрыть, используйте сервисный аккаунт:
+1. На [console.cloud.google.com](https://console.cloud.google.com) включите **Google Sheets API**, затем Service Accounts → Create → Keys → JSON.
+2. Расшарьте таблицу на email сервисного аккаунта (право «Читатель»).
+3. Вставьте весь JSON в `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
 ### 3. Render
 
