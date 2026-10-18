@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .catalog import Catalog, SIM_LABELS, format_price, normalize_memory, normalize_sim
-from .tradein import Condition, quote, topup
+from .tradein import Condition, installment, quote, topup
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +89,27 @@ TOOL_DEFINITIONS: list[dict] = [
             "required": ["new_model", "new_memory"],
         },
     },
+    {
+        "name": "calculate_kaspi_installment",
+        "description": (
+            "Рассрочка Kaspi (обычно 0-0-24): к цене за наличные добавляется наценка, итог делится на месяцы. "
+            "basis='product' — для товара из прайса (нужны model и, если вариантов несколько, memory/sim). "
+            "basis='tradein_topup' — для последней рассчитанной доплаты по Trade-in. "
+            "Цены в прайсе — за наличные; эту сумму и платёж в месяц называй только из ответа инструмента."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "basis": {"type": "string", "enum": ["product", "tradein_topup"]},
+                "model": {"type": "string"},
+                "memory": {"type": "string"},
+                "sim": {"type": "string", "enum": ["esim", "sim+esim"]},
+                "color": {"type": "string"},
+                "months": {"type": "integer", "description": "По умолчанию 24"},
+            },
+            "required": ["basis"],
+        },
+    },
 ]
 
 
@@ -99,9 +120,11 @@ def _dump(obj: Any) -> str:
 class ToolExecutor:
     """Выполняет вызовы инструментов. `state` — изменяемый словарь карточки диалога (сохраняется в БД)."""
 
-    def __init__(self, catalog: Catalog, state: dict):
+    def __init__(self, catalog: Catalog, state: dict, kaspi_markup_percent: float = 20, kaspi_months: int = 24):
         self.catalog = catalog
         self.state = state
+        self.kaspi_markup = kaspi_markup_percent
+        self.kaspi_months = kaspi_months
 
     def run(self, name: str, args: dict) -> tuple[str, bool]:
         """Возвращает (json-строка результата, is_error)."""
@@ -204,6 +227,43 @@ class ToolExecutor:
         }
         self.state["last_topup"] = {k: result[k] for k in ("new_device", "new_price", "tradein_estimate", "topup")}
         return result
+
+
+    # ------------------------------------------------------------------ рассрочка
+    def _t_calculate_kaspi_installment(self, basis: str, model: str | None = None, memory: str | None = None,
+                                       sim: str | None = None, color: str | None = None,
+                                       months: int | None = None) -> dict:
+        months = months or self.kaspi_months
+        if months != self.kaspi_months:
+            return {"error": f"Наценка известна только для рассрочки на {self.kaspi_months} мес. "
+                             "Другие сроки уточнит менеджер."}
+        if basis == "tradein_topup":
+            lt = self.state.get("last_topup")
+            if not lt:
+                return {"error": "Доплата по Trade-in ещё не рассчитана — сначала calculate_tradein_topup."}
+            calc = installment(lt["topup"], self.kaspi_markup, months)
+            return {"basis": f"доплата за {lt['new_device']} с Trade-in", **calc, **self._inst_text(calc),
+                    "note": "Доплата предварительная; одобрение рассрочки — за Kaspi."}
+        if not model:
+            return {"error": "Укажи модель товара."}
+        items, _ = self.catalog.find_exact(model, memory, sim, color)
+        if not items:
+            return {"error": "Товар не найден в прайсе — сумму не называй."}
+        if len(items) > 1:
+            return {"status": "need_details", "note": "Несколько вариантов — уточни память/SIM.",
+                    "options": [p.to_tool() for p in items]}
+        p = items[0]
+        if p.price is None:
+            return {"error": "Цена в прайсе не указана — рассрочку не считаем."}
+        calc = installment(p.price, self.kaspi_markup, months)
+        return {"product": p.label(), **calc, **self._inst_text(calc),
+                "note": "Цена в прайсе — за наличные; в рассрочку дороже на наценку. Одобрение — за Kaspi."}
+
+    @staticmethod
+    def _inst_text(c: dict) -> dict:
+        return {"cash_price_text": format_price(c["cash_price"]),
+                "installment_price_text": format_price(c["installment_price"]),
+                "monthly_payment_text": format_price(c["monthly_payment"])}
 
 
 def state_summary(state: dict) -> str:

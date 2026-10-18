@@ -173,3 +173,39 @@ def test_battery_boundaries():
     assert quote(100000, Condition(79, **base))["estimate"] == 85000
     assert quote(100000, Condition(75, **base))["estimate"] == 85000
     assert quote(100000, Condition(74, **base))["status"] == "manager_review"
+
+
+def test_kaspi_installment_product(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "calculate_kaspi_installment", basis="product",
+               model="iPhone 17 Pro", memory="256", sim="sim+esim")
+    assert r["cash_price"] == 630000
+    assert r["installment_price"] == 756000
+    assert r["monthly_payment"] == 31500 and r["months"] == 24
+
+
+def test_kaspi_installment_needs_details(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "calculate_kaspi_installment", basis="product", model="iPhone 17 Pro")
+    assert r["status"] == "need_details"
+
+
+def test_kaspi_installment_topup(catalog):
+    state = {}
+    ex = ToolExecutor(catalog, state)
+    run(ex, "quote_iphone_tradein", model="iPhone 15 Pro", memory="256", battery_percent=82, has_box=True,
+        minor_scratches=True, was_repaired=False, screen_or_body_damage=False, all_functions_work=True)
+    run(ex, "calculate_tradein_topup", new_model="iPhone 18 Pro Max", new_memory="256", new_sim="sim+esim")
+    r, _ = run(ex, "calculate_kaspi_installment", basis="tradein_topup")
+    assert r["cash_price"] == 615000 and r["installment_price"] == 738000 and r["monthly_payment"] == 30750
+
+
+def test_kaspi_other_term_rejected(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "calculate_kaspi_installment", basis="product",
+               model="PlayStation 5 Slim", months=12)
+    assert "error" in r
+
+
+def test_installment_rounding():
+    from app.tradein import installment
+    r = installment(405000, 20, 24)
+    assert r["installment_price"] == 486000 and r["monthly_payment"] == 20250
+    assert installment(100001, 20, 24)["monthly_payment"] == 5001

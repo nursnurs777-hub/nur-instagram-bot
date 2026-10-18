@@ -69,3 +69,17 @@ def topup(new_price: int, tradein_estimate: int) -> dict:
         "topup": max(diff, 0),
         "tradein_exceeds_price": diff < 0,
     }
+
+
+def installment(cash_price: int, markup_percent: float, months: int) -> dict:
+    """Рассрочка Kaspi: цена за наличные + наценка; платёж округляется вверх до тенге."""
+    import math
+
+    total = math.ceil(cash_price * (100 + markup_percent) / 100)
+    return {
+        "cash_price": cash_price,
+        "markup_percent": markup_percent,
+        "installment_price": total,
+        "months": months,
+        "monthly_payment": math.ceil(total / months),
+    }

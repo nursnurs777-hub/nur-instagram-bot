@@ -48,6 +48,9 @@ class Settings:
     store_hours: str = field(default_factory=lambda: _env("STORE_HOURS", "ежедневно с 10:00 до 20:00"))
     store_whatsapp: str = field(default_factory=lambda: _env("STORE_WHATSAPP", "https://wa.me/77028081111"))
 
+    kaspi_markup_percent: float = field(default_factory=lambda: float(_env("KASPI_MARKUP_PERCENT", "20")))
+    kaspi_months: int = field(default_factory=lambda: _int("KASPI_MONTHS", 24))
+
     # Instagram / Meta
     ig_verify_token: str = field(default_factory=lambda: _env("IG_VERIFY_TOKEN"))
     ig_app_secret: str = field(default_factory=lambda: _env("IG_APP_SECRET"))

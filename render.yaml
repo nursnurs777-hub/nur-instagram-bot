@@ -37,6 +37,8 @@ services:
         sync: false
       - key: STORE_WHATSAPP
         value: https://wa.me/77028081111
+      - key: KASPI_MARKUP_PERCENT
+        value: "20"
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5-5
       - key: FOLLOWUP_ENABLED

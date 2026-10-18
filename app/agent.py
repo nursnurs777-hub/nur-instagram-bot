@@ -27,6 +27,7 @@ RUNTIME_RULES = """\
 - search_products, get_exact_price — розничный прайс (Google Sheets). Любую цену бери только отсюда.
 - quote_iphone_tradein — предварительная оценка старого iPhone по таблице выкупа; результат сохраняется в карточке диалога.
 - calculate_tradein_topup — доплата = цена нового − сохранённая оценка. Арифметику сам не делай.
+- calculate_kaspi_installment — цена в рассрочку Kaspi и платёж в месяц (для товара или для доплаты по Trade-in).
 {web_search_line}
 Инструментов get_stock и handoff_to_manager НЕТ: остатки не проверяются, автоматической передачи менеджеру нет. \
 Для наличия, брони и оформления предлагай WhatsApp менеджера.
@@ -65,6 +66,7 @@ def render_prompt(template: str, s: Settings) -> str:
         "STORE_ADDRESS": s.store_address,
         "STORE_HOURS": s.store_hours,
         "WHATSAPP": s.store_whatsapp or NO_WHATSAPP,
+        "KASPI_MARKUP": f"{s.kaspi_markup_percent:g}",
     }
     for k, v in values.items():
         template = template.replace("{{" + k + "}}", v)
@@ -156,7 +158,7 @@ class SalesAgent:
                     images: list[IncomingImage] | None = None, extra_system: str | None = None,
                     extra_user_note: str | None = None) -> AgentResult:
         state = dict(state)
-        executor = ToolExecutor(catalog, state)
+        executor = ToolExecutor(catalog, state, self.s.kaspi_markup_percent, self.s.kaspi_months)
         messages = build_messages(history, images, extra_user_note)
         if not messages:
             return AgentResult("", state)
