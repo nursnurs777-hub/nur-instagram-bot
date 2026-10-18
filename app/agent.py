@@ -54,9 +54,26 @@ class AgentResult:
     tool_calls: list[str] = field(default_factory=list)
 
 
-def _load_prompt(path: str) -> str:
+NO_WHATSAPP = ("(WhatsApp менеджера пока не указан — для брони, наличия и оформления предложи клиенту "
+               "дождаться ответа менеджера здесь, в Direct, или приехать в магазин; не выдумывай номер)")
+
+
+def render_prompt(template: str, s: Settings) -> str:
+    values = {
+        "STORE_NAME": s.store_name,
+        "STORE_INSTAGRAM": s.store_instagram,
+        "STORE_ADDRESS": s.store_address,
+        "STORE_HOURS": s.store_hours,
+        "WHATSAPP": s.store_whatsapp or NO_WHATSAPP,
+    }
+    for k, v in values.items():
+        template = template.replace("{{" + k + "}}", v)
+    return template
+
+
+def _load_prompt(path: str, s: Settings) -> str:
     with open(path, encoding="utf-8") as f:
-        return f.read()
+        return render_prompt(f.read(), s)
 
 
 def strip_markdown(text: str) -> str:
@@ -104,7 +121,7 @@ class SalesAgent:
     def __init__(self, settings: Settings, client: AsyncAnthropic | None = None):
         self.s = settings
         self.client = client or AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.base_prompt = _load_prompt(settings.system_prompt_path)
+        self.base_prompt = _load_prompt(settings.system_prompt_path, settings)
 
     def _tools(self) -> list[dict]:
         tools = list(TOOL_DEFINITIONS)

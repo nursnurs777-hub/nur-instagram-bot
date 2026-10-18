@@ -41,6 +41,13 @@ ROOT = Path(__file__).resolve().parent.parent
 
 @dataclass(frozen=True)
 class Settings:
+    # Магазин (подставляется в системный промпт вместо {{...}})
+    store_name: str = field(default_factory=lambda: _env("STORE_NAME", "NUR Electronics"))
+    store_instagram: str = field(default_factory=lambda: _env("STORE_INSTAGRAM", "@nurelectronics.kz"))
+    store_address: str = field(default_factory=lambda: _env("STORE_ADDRESS", "Астана, ул. Төле би, 52"))
+    store_hours: str = field(default_factory=lambda: _env("STORE_HOURS", "ежедневно с 10:00 до 20:00"))
+    store_whatsapp: str = field(default_factory=lambda: _env("STORE_WHATSAPP"))  # например https://wa.me/7707...
+
     # Instagram / Meta
     ig_verify_token: str = field(default_factory=lambda: _env("IG_VERIFY_TOKEN"))
     ig_app_secret: str = field(default_factory=lambda: _env("IG_APP_SECRET"))

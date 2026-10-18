@@ -1,4 +1,4 @@
-# KopKop AI — ИИ-продавец в Instagram Direct
+# NUR Electronics AI — ИИ-продавец в Instagram Direct
 
 Бот отвечает клиентам в директе магазина: консультирует, берёт цены из Google Sheets, оценивает Trade-in и считает доплату. Если в переписку вмешивается живой менеджер, бот уступает ему.
 
@@ -22,7 +22,7 @@
 
 | Файл | Что внутри |
 |---|---|
-| `prompts/system_prompt.md` | Системный промпт: здесь меняется поведение бота |
+| `prompts/system_prompt.md` | Системный промпт: здесь меняется поведение бота. Название, Instagram, адрес, часы и WhatsApp подставляются из переменных `STORE_*` |
 | `app/main.py` | Вебхук, админка, страницы `/privacy` и `/data-deletion` для App Review |
 | `app/processor.py` | Склейка сообщений, пауза менеджера, планировщик |
 | `app/agent.py` | Вызов Claude и цикл инструментов |
@@ -39,9 +39,9 @@
 ### 1. GitHub
 
 ```bash
-git init && git add . && git commit -m "KopKop AI"
+git init && git add . && git commit -m "NUR Electronics AI"
 git branch -M main
-git remote add origin https://github.com/<вы>/kopkop-ai.git
+git remote add origin https://github.com/<вы>/nur-ai.git
 git push -u origin main
 ```
 

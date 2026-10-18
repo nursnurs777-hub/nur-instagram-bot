@@ -291,3 +291,16 @@ def test_agent_tool_loop():
     assert tool_result["type"] == "tool_result" and '"estimate": 215000' in tool_result["content"]
     assert calls[0]["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert "Сохранённая оценка" not in calls[0]["system"][1]["text"]
+
+
+def test_prompt_rendered_with_store_details():
+    from app.agent import render_prompt
+    tpl = Path("prompts/system_prompt.md").read_text(encoding="utf-8")
+    s = replace(Settings(), store_whatsapp="")
+    out = render_prompt(tpl, s)
+    assert "{{" not in out
+    assert "NUR Electronics" in out and "@nurelectronics.kz" in out and "Төле би, 52" in out
+    assert "KopKop" not in out and "77079931111" not in out
+    assert "не выдумывай номер" in out
+    out2 = render_prompt(tpl, replace(s, store_whatsapp="https://wa.me/77000000000"))
+    assert "https://wa.me/77000000000" in out2

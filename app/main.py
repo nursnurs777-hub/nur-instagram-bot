@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     await ig.aclose()
 
 
-app = FastAPI(title="KopKop AI", lifespan=lifespan)
+app = FastAPI(title=f"{settings.store_name} AI", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -121,19 +121,25 @@ _PAGE = """<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="view
 <h1>{title}</h1>{body}</body></html>"""
 
 
+def _store() -> dict:
+    return {"store": settings.store_name, "ig": settings.store_instagram, "addr": settings.store_address,
+            "contact": f" в WhatsApp: {settings.store_whatsapp}" if settings.store_whatsapp
+            else f" в Instagram {settings.store_instagram}"}
+
+
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy():
     return _PAGE.format(title="Политика конфиденциальности", body="""
-<p>ИИ-ассистент магазина отвечает на сообщения, которые пользователи сами отправляют в Instagram Direct магазина.</p>
+<p>ИИ-ассистент магазина {store} ({ig}, {addr}) отвечает на сообщения, которые пользователи сами отправляют в Instagram Direct магазина.</p>
 <p>Мы обрабатываем: идентификатор пользователя Instagram (IGSID), текст сообщений и вложения, отправленные в диалог.
 Данные используются только для ответа на вопросы о товарах, ценах и Trade-in и хранятся в защищённой базе данных.</p>
 <p>Текст сообщений передаётся поставщику ИИ-модели (Anthropic) исключительно для формирования ответа.
 Мы не продаём и не передаём данные третьим лицам для рекламы. Мы не запрашиваем пароли, коды и платёжные данные.</p>
-<p>Чтобы удалить историю переписки, напишите в Direct «удалите мои данные» или свяжитесь с нами в WhatsApp: +7 707 993 1111.</p>""")
+<p>Чтобы удалить историю переписки, напишите в Direct «удалите мои данные» или свяжитесь с нами{contact}.</p>""".format(**_store()))
 
 
 @app.get("/data-deletion", response_class=HTMLResponse)
 async def data_deletion():
     return _PAGE.format(title="Удаление данных", body="""
 <p>Чтобы удалить историю переписки с ИИ-ассистентом, напишите в Instagram Direct магазина «удалите мои данные»
-или обратитесь в WhatsApp: +7 707 993 1111. Мы удалим данные в течение 30 дней.</p>""")
+или свяжитесь с нами{contact}. Мы удалим данные в течение 30 дней.</p>""".format(**_store()))

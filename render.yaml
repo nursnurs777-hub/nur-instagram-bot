@@ -2,7 +2,7 @@
 # Секреты (sync: false) Render попросит ввести при создании.
 services:
   - type: web
-    name: kopkop-ai
+    name: nur-ai
     runtime: python
     plan: starter            # бесплатный план засыпает через 15 мин простоя — для бота не подходит
     region: frankfurt
@@ -15,7 +15,7 @@ services:
         value: "3.12.8"
       - key: DATABASE_URL
         fromDatabase:
-          name: kopkop-db
+          name: nur-db
           property: connectionString
       - key: IG_VERIFY_TOKEN
         generateValue: true
@@ -35,12 +35,14 @@ services:
         sync: false
       - key: ALLOWED_USER_IDS     # пока тестируете — IGSID тестировщиков через запятую; пусто = отвечать всем
         sync: false
+      - key: STORE_WHATSAPP     # например https://wa.me/7701XXXXXXX
+        sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5-5
       - key: FOLLOWUP_ENABLED
         value: "false"
 
 databases:
-  - name: kopkop-db
+  - name: nur-db
     plan: basic-256mb        # бесплатная БД Render удаляется через 30 дней
     region: frankfurt

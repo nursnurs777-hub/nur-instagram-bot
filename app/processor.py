@@ -15,8 +15,11 @@ from .sheets import CatalogProvider
 
 log = logging.getLogger(__name__)
 
-FALLBACK_TEXT = ("Извините, сейчас не получается ответить автоматически. Напишите, пожалуйста, менеджеру "
-                 "в WhatsApp: https://wa.me/77079931111")
+def fallback_text(s: Settings) -> str:
+    base = "Извините, сейчас не получается ответить автоматически."
+    if s.store_whatsapp:
+        return f"{base} Напишите, пожалуйста, менеджеру в WhatsApp: {s.store_whatsapp}"
+    return f"{base} Менеджер ответит вам здесь в ближайшее время."
 
 OPT_OUT_RX = re.compile(
     r"(не\s+пиш|больше\s+не\s+пиш|не\s+надо\s+пис|отпиш|жазба|жазбаңыз|хабарласпа|"
@@ -181,7 +184,7 @@ class Processor:
                 new_state = result.state
             except Exception:
                 log.exception("Ошибка генерации ответа для %s", user_id)
-                text, new_state = ("" if followup else FALLBACK_TEXT), conv["state"]
+                text, new_state = ("" if followup else fallback_text(self.s)), conv["state"]
 
             if not text:
                 await self._db(self.store.mark_processed, [m["id"] for m in pending])
