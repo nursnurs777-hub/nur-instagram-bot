@@ -24,6 +24,11 @@ log = logging.getLogger("app")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store = Store(settings.database_url)
+    if store.engine.dialect.name == "sqlite":
+        log.warning("База данных: SQLite (временный файл) — история диалогов пропадёт при перезапуске. Задайте DATABASE_URL.")
+    else:
+        u = store.engine.url
+        log.info("База данных: %s, хост %s, база %s", store.engine.dialect.name, u.host, u.database)
     ig = InstagramClient(settings.ig_access_token, settings.graph_api_version)
     catalogs = CatalogProvider(settings)
     agent = SalesAgent(settings)
