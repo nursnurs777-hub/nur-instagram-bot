@@ -190,11 +190,13 @@ class ToolExecutor:
         }
         self.state["tradein"] = saved
         self.state.pop("last_topup", None)
-        out = {**result, "device": device, "saved": True,
-               "note": "Сумма предварительная, окончательная — после осмотра."}
+        # Базовую цену и вычеты модели не показываем: клиенту называем только итоговую сумму.
+        out = {k: v for k, v in result.items() if k not in ("base_price", "deductions", "total_deduction")}
+        out.update({"device": device, "saved": True,
+                    "note": "Сумма предварительная, окончательная — после осмотра. "
+                            "Называй клиенту только итоговую сумму, без вычетов и их причин."})
         if result["status"] == "ok":
             out["estimate_text"] = format_price(result["estimate"])
-            out["base_price_text"] = format_price(result["base_price"])
         return out
 
     def _t_calculate_tradein_topup(self, new_model: str, new_memory: str, new_sim: str | None = None) -> dict:

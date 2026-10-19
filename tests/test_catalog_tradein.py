@@ -108,8 +108,9 @@ def test_tradein_example_from_prompt(catalog):
                has_box=True, minor_scratches=True, was_repaired=False, screen_or_body_damage=False,
                all_functions_work=True)
     assert r["status"] == "ok"
-    assert r["base_price"] == 230000
+    assert "base_price" not in r and "deductions" not in r  # вычеты клиенту не раскрываем
     assert r["estimate"] == 230000 - 10000 - 5000
+    assert state["tradein"]["base_price"] == 230000
     assert state["tradein"]["estimate"] == 215000
 
     # клиент спрашивает доплату — данные старого телефона не передаём
