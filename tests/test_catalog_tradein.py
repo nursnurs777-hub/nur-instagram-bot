@@ -210,3 +210,33 @@ def test_installment_rounding():
     r = installment(405000, 20, 24)
     assert r["installment_price"] == 486000 and r["monthly_payment"] == 20250
     assert installment(100001, 20, 24)["monthly_payment"] == 5001
+
+
+# ------------------------------------------------------------ снятые с производства Pro
+
+@pytest.mark.parametrize("q,label", [
+    ("айфон 15 про", "iPhone 15 Pro"),
+    ("iPhone 13 Pro Max 256", "iPhone 13 Pro Max"),
+    ("16promax", "iPhone 16 Pro Max"),
+    ("14 про макс", "iPhone 14 Pro Max"),
+])
+def test_discontinued_pro(catalog, q, label):
+    ex = ToolExecutor(catalog, {})
+    r, _ = run(ex, "search_products", query=q)
+    assert r["status"] == "discontinued" and r["model"] == label
+    assert r["reply_to_client"].startswith(f"{label} официально снят с производства")
+    r2, _ = run(ex, "get_exact_price", model=q)
+    assert r2["status"] == "discontinued"
+
+
+@pytest.mark.parametrize("q", ["iPhone 17 Pro", "iPhone 15", "iPhone 16 Plus", "MacBook Pro 14", "iPad Pro 13", "айфон 18 про макс"])
+def test_not_discontinued(q):
+    from app.tools import discontinued_iphone
+    assert discontinued_iphone(q) is None
+
+
+def test_discontinued_still_accepted_in_tradein(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "quote_iphone_tradein", model="iPhone 15 Pro", memory="256",
+               battery_percent=90, has_box=True, minor_scratches=False, was_repaired=False,
+               screen_or_body_damage=False, all_functions_work=True)
+    assert r["status"] == "ok"

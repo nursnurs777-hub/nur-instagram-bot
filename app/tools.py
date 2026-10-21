@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
-from .catalog import Catalog, SIM_LABELS, format_price, normalize_memory, normalize_sim
+from .catalog import Catalog, SIM_LABELS, format_price, norm, normalize_memory, normalize_sim
 from .tradein import Condition, installment, quote, topup
 
 log = logging.getLogger(__name__)
@@ -117,6 +118,35 @@ def _dump(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
 
+# Новые iPhone 13–16 Pro / Pro Max не продаём: сняты с производства. В Trade-in принимаем как обычно.
+_DISCONTINUED_RX = re.compile(r"(?<![0-9])(13|14|15|16) ?pro( ?max)?(?![a-z])")
+_OTHER_DEVICES = ("macbook", "ipad", "watch", "airpods", "samsung", "galaxy")
+
+
+def discontinued_iphone(text: str | None) -> str | None:
+    """«айфон 15 про макс» → «iPhone 15 Pro Max»; для остальных запросов — None."""
+    s = norm(text)
+    if not s or any(d in s for d in _OTHER_DEVICES):
+        return None
+    m = _DISCONTINUED_RX.search(s)
+    if not m:
+        return None
+    return f"iPhone {m.group(1)} Pro" + (" Max" if m.group(2) else "")
+
+
+def _discontinued_result(label: str) -> dict:
+    return {
+        "found": 0,
+        "status": "discontinued",
+        "model": label,
+        "reply_to_client": (f"{label} официально снят с производства компанией Apple, и мы эту модель не продаём. "
+                            "Хотите, подберу вам более новую модель iPhone?"),
+        "note": ("Ответь клиенту этим текстом. Не говори про восстановленные телефоны, если клиент сам не спросил, "
+                 "не отправляй ссылки. Новые модели предлагай только из прайса (search_products). "
+                 "Если клиент хочет СДАТЬ эту модель — оценивай по Trade-in как обычно."),
+    }
+
+
 class ToolExecutor:
     """Выполняет вызовы инструментов. `state` — изменяемый словарь карточки диалога (сохраняется в БД)."""
 
@@ -142,6 +172,8 @@ class ToolExecutor:
 
     # ------------------------------------------------------------------ розница
     def _t_search_products(self, query: str) -> dict:
+        if label := discontinued_iphone(query):
+            return _discontinued_result(label)
         found = self.catalog.search(query)
         if not found:
             return {"found": 0, "note": "В прайсе не найдено. Это не доказывает отсутствие товара — предложи уточнить у менеджера."}
@@ -149,6 +181,8 @@ class ToolExecutor:
 
     def _t_get_exact_price(self, model: str, memory: str | None = None, sim: str | None = None,
                            color: str | None = None) -> dict:
+        if label := discontinued_iphone(model):
+            return _discontinued_result(label)
         items, exact = self.catalog.find_exact(model, memory, sim, color)
         if not items:
             return {"found": 0, "note": "Такой конфигурации в прайсе нет. Не подставляй цену другой модели/памяти."}
@@ -205,6 +239,8 @@ class ToolExecutor:
             return {"error": "Нет сохранённой оценки старого телефона — сначала собери данные и вызови quote_iphone_tradein."}
         if saved.get("status") != "ok":
             return {"error": "Старый телефон требует индивидуальной оценки менеджером — доплату автоматически не считаем."}
+        if label := discontinued_iphone(new_model):
+            return _discontinued_result(label)
         items, _ = self.catalog.find_exact(new_model, new_memory, new_sim)
         items = [p for p in items if normalize_memory(new_memory) == p.memory]
         if new_sim:
