@@ -134,6 +134,41 @@ def discontinued_iphone(text: str | None) -> str | None:
     return f"iPhone {m.group(1)} Pro" + (" Max" if m.group(2) else "")
 
 
+# Ожидаемые модели: пока в прайсе нет цены, бот называет дату ориентировочно и отправляет к менеджеру.
+# Когда в таблице появится цена, правило перестаёт срабатывать само.
+UPCOMING_MODELS = {
+    "iPhone Duo": {"aliases": ("duo", "дуо"), "eta": "примерно 25 октября"},
+}
+
+
+def upcoming_model(text: str | None) -> str | None:
+    words = set(norm(text).split())
+    if words & {"macbook", "ipad", "watch", "airpods", "samsung", "galaxy", "surface"}:
+        return None
+    for label, cfg in UPCOMING_MODELS.items():
+        if words & set(cfg["aliases"]):
+            return label
+    return None
+
+
+def _upcoming_unpriced(label: str, items) -> bool:
+    """True, если в прайсе нет ни одной позиции этой модели с ценой."""
+    key = norm(label)
+    return not any(p.price is not None and norm(p.model) == key for p in items)
+
+
+def _upcoming_info(label: str) -> dict:
+    eta = UPCOMING_MODELS[label]["eta"]
+    return {
+        "status": "expected",
+        "expected_model": label,
+        "expected_arrival": eta,
+        "note": (f"{label}: поступление ожидается {eta} — называй дату только как ориентировочную. "
+                 "Цену и возможность предзаказа клиент уточняет у менеджера в WhatsApp. "
+                 "Не обещай наличие, не называй и не придумывай цену, не считай доплату и рассрочку."),
+    }
+
+
 def _discontinued_result(label: str) -> dict:
     return {
         "found": 0,
@@ -175,6 +210,9 @@ class ToolExecutor:
         if label := discontinued_iphone(query):
             return _discontinued_result(label)
         found = self.catalog.search(query)
+        upcoming = upcoming_model(query)
+        if upcoming and _upcoming_unpriced(upcoming, found):
+            return {"found": 0, **_upcoming_info(upcoming)}
         if not found:
             return {"found": 0, "note": "В прайсе не найдено. Это не доказывает отсутствие товара — предложи уточнить у менеджера."}
         return {"found": len(found), "items": [p.to_tool() for p in found]}
@@ -184,6 +222,9 @@ class ToolExecutor:
         if label := discontinued_iphone(model):
             return _discontinued_result(label)
         items, exact = self.catalog.find_exact(model, memory, sim, color)
+        upcoming = upcoming_model(model)
+        if upcoming and _upcoming_unpriced(upcoming, items):
+            return {"found": 0, **_upcoming_info(upcoming)}
         if not items:
             return {"found": 0, "note": "Такой конфигурации в прайсе нет. Не подставляй цену другой модели/памяти."}
         res: dict = {"found": len(items), "exact_model_match": exact, "items": [p.to_tool() for p in items]}
@@ -242,6 +283,8 @@ class ToolExecutor:
         if label := discontinued_iphone(new_model):
             return _discontinued_result(label)
         items, _ = self.catalog.find_exact(new_model, new_memory, new_sim)
+        if (upcoming := upcoming_model(new_model)) and _upcoming_unpriced(upcoming, items):
+            return _upcoming_info(upcoming)
         items = [p for p in items if normalize_memory(new_memory) == p.memory]
         if new_sim:
             items = [p for p in items if p.sim in (normalize_sim(new_sim), None)]
@@ -285,6 +328,8 @@ class ToolExecutor:
         if not model:
             return {"error": "Укажи модель товара."}
         items, _ = self.catalog.find_exact(model, memory, sim, color)
+        if (upcoming := upcoming_model(model)) and _upcoming_unpriced(upcoming, items):
+            return _upcoming_info(upcoming)
         if not items:
             return {"error": "Товар не найден в прайсе — сумму не называй."}
         if len(items) > 1:

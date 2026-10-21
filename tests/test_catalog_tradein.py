@@ -82,8 +82,7 @@ def test_no_wrong_generation(catalog):
 def test_empty_price_is_flagged(catalog):
     ex = ToolExecutor(catalog, {})
     r, _ = run(ex, "get_exact_price", model="iPhone Duo", memory="256GB", sim="esim")
-    assert r["items"][0]["price_kzt"] is None
-    assert "note" in r["items"][0]
+    assert r["status"] == "expected" and "items" not in r
 
 
 def test_search_misc(catalog):
@@ -240,3 +239,35 @@ def test_discontinued_still_accepted_in_tradein(catalog):
                battery_percent=90, has_box=True, minor_scratches=False, was_repaired=False,
                screen_or_body_damage=False, all_functions_work=True)
     assert r["status"] == "ok"
+
+
+# ------------------------------------------------------------ iPhone Duo — ожидается
+
+@pytest.mark.parametrize("q", ["iPhone Duo", "айфон дуо 512", "iphone duo 1tb esim"])
+def test_iphone_duo_expected(catalog, q):
+    ex = ToolExecutor(catalog, {})
+    for name, kw in (("search_products", {"query": q}), ("get_exact_price", {"model": q})):
+        r, _ = run(ex, name, **kw)
+        assert r["status"] == "expected" and r["expected_model"] == "iPhone Duo"
+        assert "25 октября" in r["expected_arrival"]
+        assert "items" not in r and "price_kzt" not in str(r)
+
+
+def test_iphone_duo_no_installment_or_topup(catalog):
+    state = {}
+    ex = ToolExecutor(catalog, state)
+    r, _ = run(ex, "calculate_kaspi_installment", basis="product", model="iPhone Duo", memory="256GB")
+    assert r["status"] == "expected"
+    run(ex, "quote_iphone_tradein", model="iPhone 15 Pro", memory="256", battery_percent=90, has_box=True,
+        minor_scratches=False, was_repaired=False, screen_or_body_damage=False, all_functions_work=True)
+    r2, _ = run(ex, "calculate_tradein_topup", new_model="iPhone Duo", new_memory="256")
+    assert r2["status"] == "expected"
+
+
+def test_iphone_duo_rule_off_when_priced():
+    from app.catalog import Catalog
+    from app.tools import ToolExecutor as TE
+    cat = Catalog({"iPhone": [["Модель", "Память", "SIM", "Цена", "Показать"],
+                              ["iPhone Duo", "256GB", "только eSIM", "900 000", "Да"]]})
+    r, _ = run(TE(cat, {}), "get_exact_price", model="iPhone Duo", memory="256GB")
+    assert "status" not in r and r["items"][0]["price_kzt"] == 900000
