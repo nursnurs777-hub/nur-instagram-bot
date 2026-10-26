@@ -36,14 +36,18 @@ async def lifespan(app: FastAPI):
     claude = AsyncAnthropic(api_key=settings.anthropic_api_key)
     providers: dict[str, CatalogProvider] = {}  # одна загрузка на таблицу, даже если она общая у филиалов
     runtimes = []
+    listed = [b for b in branches if b.primary or b.active]  # неактивные филиалы клиентам не называем
     for b in branches:
         if not b.primary and not b.active:
             continue
         sid = b.spreadsheet_id or settings.spreadsheet_id
         if sid not in providers:
-            providers[sid] = CatalogProvider(replace(settings, spreadsheet_id=sid))
+            over = {"spreadsheet_id": sid}
+            if sid != settings.spreadsheet_id:
+                over["sheet_gids"] = b.sheet_gids  # у чужой таблицы свои номера листов
+            providers[sid] = CatalogProvider(replace(settings, **over))
         runtimes.append(BranchRuntime(b, InstagramClient(b.access_token, settings.graph_api_version),
-                                      SalesAgent(settings, claude, b, branches), providers[sid]))
+                                      SalesAgent(settings, claude, b, listed), providers[sid]))
     primary = runtimes[0]
     proc = Processor(settings, store, primary.ig, primary.agent, primary.catalogs, runtimes)
     app.state.store, app.state.catalogs, app.state.proc = store, primary.catalogs, proc

@@ -36,6 +36,7 @@ class Branch:
     phone: str = ""
     delivery: str = ""
     spreadsheet_id: str = ""
+    sheet_gids: str = ""         # запасной список листов «имя:gid,…» для своей таблицы
     access_token: str = field(default="", repr=False)
     account_id: str = ""
     primary: bool = False
@@ -100,6 +101,7 @@ def load_branches(s: Settings, path: str | None = None) -> list[Branch]:
             whatsapp=raw.get("whatsapp", ""), phone=raw.get("phone", ""),
             delivery=raw.get("delivery", DEFAULT_DELIVERY_OTHER),
             spreadsheet_id=raw.get("spreadsheet_id") or primary.spreadsheet_id,
+            sheet_gids=raw.get("sheet_gids", ""),
             access_token=_env(f"IG_ACCESS_TOKEN_{up}"),
             account_id=_env(f"IG_ACCOUNT_ID_{up}", str(raw.get("account_id", ""))),
         )
