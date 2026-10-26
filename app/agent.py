@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from anthropic import AsyncAnthropic
 
 from .catalog import Catalog
+from .branches import Branch, branches_note, primary_from_settings
 from .config import Settings
 from .tools import TOOL_DEFINITIONS, ToolExecutor, state_summary
 
@@ -90,13 +91,18 @@ NO_WHATSAPP = ("(WhatsApp менеджера пока не указан — дл
                "дождаться ответа менеджера здесь, в Direct, или приехать в магазин; не выдумывай номер)")
 
 
-def render_prompt(template: str, s: Settings) -> str:
+def render_prompt(template: str, s: Settings, branch: Branch | None = None,
+                  branches: list[Branch] | None = None) -> str:
+    b = branch or primary_from_settings(s)
     values = {
-        "STORE_NAME": s.store_name,
-        "STORE_INSTAGRAM": s.store_instagram,
-        "STORE_ADDRESS": s.store_address,
-        "STORE_HOURS": s.store_hours,
-        "WHATSAPP": s.store_whatsapp or NO_WHATSAPP,
+        "STORE_NAME": b.name,
+        "STORE_INSTAGRAM": b.instagram,
+        "STORE_CITY": b.city,
+        "STORE_ADDRESS": b.address,
+        "STORE_HOURS": b.hours,
+        "WHATSAPP": b.whatsapp or NO_WHATSAPP,
+        "DELIVERY": b.delivery,
+        "BRANCHES_NOTE": branches_note(b, branches or [b]),
         "KASPI_MARKUP": f"{s.kaspi_markup_percent:g}",
     }
     for k, v in values.items():
@@ -104,9 +110,10 @@ def render_prompt(template: str, s: Settings) -> str:
     return template
 
 
-def _load_prompt(path: str, s: Settings) -> str:
+def _load_prompt(path: str, s: Settings, branch: Branch | None = None,
+                 branches: list[Branch] | None = None) -> str:
     with open(path, encoding="utf-8") as f:
-        return render_prompt(f.read(), s)
+        return render_prompt(f.read(), s, branch, branches)
 
 
 def strip_markdown(text: str) -> str:
@@ -151,10 +158,12 @@ def build_messages(history: list[dict], images: list[IncomingImage] | None = Non
 
 
 class SalesAgent:
-    def __init__(self, settings: Settings, client: AsyncAnthropic | None = None):
+    def __init__(self, settings: Settings, client: AsyncAnthropic | None = None, branch: Branch | None = None,
+                 branches: list[Branch] | None = None):
         self.s = settings
         self.client = client or AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.base_prompt = _load_prompt(settings.system_prompt_path, settings)
+        self.branch = branch or primary_from_settings(settings)
+        self.base_prompt = _load_prompt(settings.system_prompt_path, settings, self.branch, branches)
 
     def _tools(self) -> list[dict]:
         tools = list(TOOL_DEFINITIONS)
@@ -172,7 +181,7 @@ class SalesAgent:
               if self.s.web_search_enabled else
               "- Поиска по сайту Apple нет: если не уверен в характеристике, честно скажи об этом.")
         runtime = RUNTIME_RULES.format(web_search_line=ws)
-        ctx = [f"Сейчас: {WEEKDAYS_RU[now.weekday()]}, {now:%d.%m.%Y %H:%M} (Астана). "
+        ctx = [f"Сейчас: {WEEKDAYS_RU[now.weekday()]}, {now:%d.%m.%Y %H:%M} ({self.branch.city}). "
                f"Магазин сейчас {'открыт' if is_open else 'закрыт'}."]
         summary = state_summary(state)
         if summary:

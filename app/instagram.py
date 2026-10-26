@@ -118,6 +118,16 @@ class InstagramClient:
                 mids.append(data["message_id"])
         return mids
 
+    async def me(self) -> dict:
+        """Кто владелец маркера: {'user_id': ID аккаунта в вебхуках, 'id': ..., 'username': ...}."""
+        if not self.token:
+            raise RuntimeError("пустой маркер")
+        r = await self.http.get(f"{self.base}/me", params={"fields": "user_id,username"},
+                                headers={"Authorization": f"Bearer {self.token}"})
+        if r.status_code >= 400:
+            raise RuntimeError(f"Instagram API {r.status_code}: {r.text[:300]}")
+        return r.json()
+
     async def typing(self, user_id: str, on: bool = True) -> None:
         try:
             await self._post({"recipient": {"id": user_id}, "sender_action": "typing_on" if on else "typing_off"})

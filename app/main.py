@@ -5,15 +5,17 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from .agent import SalesAgent
+from .branches import load_branches
 from .config import settings
 from .db import Store
 from .instagram import InstagramClient, parse_events, verify_signature
-from .processor import Processor
+from .processor import BranchRuntime, Processor
 from .sheets import CatalogProvider
 from .testchat import router as testchat_router
 
@@ -29,19 +31,34 @@ async def lifespan(app: FastAPI):
     else:
         u = store.engine.url
         log.info("База данных: %s, хост %s, база %s", store.engine.dialect.name, u.host, u.database)
-    ig = InstagramClient(settings.ig_access_token, settings.graph_api_version)
-    catalogs = CatalogProvider(settings)
-    agent = SalesAgent(settings)
-    proc = Processor(settings, store, ig, agent, catalogs)
-    app.state.store, app.state.catalogs, app.state.proc = store, catalogs, proc
-    try:
-        await catalogs.get()
-    except Exception:
-        log.exception("Каталог не загрузился при старте — повторим при первом сообщении")
+    branches = load_branches(settings)
+    from anthropic import AsyncAnthropic
+    claude = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    providers: dict[str, CatalogProvider] = {}  # одна загрузка на таблицу, даже если она общая у филиалов
+    runtimes = []
+    for b in branches:
+        if not b.primary and not b.active:
+            continue
+        sid = b.spreadsheet_id or settings.spreadsheet_id
+        if sid not in providers:
+            providers[sid] = CatalogProvider(replace(settings, spreadsheet_id=sid))
+        runtimes.append(BranchRuntime(b, InstagramClient(b.access_token, settings.graph_api_version),
+                                      SalesAgent(settings, claude, b, branches), providers[sid]))
+    primary = runtimes[0]
+    proc = Processor(settings, store, primary.ig, primary.agent, primary.catalogs, runtimes)
+    app.state.store, app.state.catalogs, app.state.proc = store, primary.catalogs, proc
+    log.info("Филиалы: %s", ", ".join(f"{rt.branch.city} ({rt.branch.instagram})" for rt in runtimes))
+    await proc.resolve_accounts()
+    for prov in providers.values():
+        try:
+            await prov.get()
+        except Exception:
+            log.exception("Каталог не загрузился при старте — повторим при первом сообщении")
     sched = asyncio.create_task(proc.scheduler())
     yield
     sched.cancel()
-    await ig.aclose()
+    for rt in runtimes:
+        await rt.ig.aclose()
 
 
 app = FastAPI(title=f"{settings.store_name} AI", lifespan=lifespan)

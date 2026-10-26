@@ -74,6 +74,7 @@
   <header>
     <div class="avatar">NUR</div>
     <div class="title"><b>{{STORE_NAME}} · тест бота</b><span>{{STORE_INSTAGRAM}} — без Instagram, ответы никуда не отправляются</span></div>
+    <select class="hbtn" id="branch" title="Филиал" hidden></select>
     <button class="hbtn" id="reset" title="Начать новый диалог">Новый диалог</button>
   </header>
   <div id="status"><span id="st-cat"><i class="dot"></i>прайс…</span><span id="st-model"></span></div>
@@ -109,6 +110,9 @@ let token = store.get('nur_admin_token') || '';
 let session = store.get('nur_test_session') || newSession();
 let files = [];
 let busy = false;
+let branch = store.get('nur_test_branch') || '';
+const bsel = $('#branch');
+bsel.onchange = () => { branch = bsel.value; store.set('nur_test_branch', branch); showCard(''); boot(); };
 
 function newSession(){ const s = Date.now().toString(36) + Math.random().toString(36).slice(2,8); store.set('nur_test_session', s); return s; }
 function esc(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -147,13 +151,19 @@ $('#tok').addEventListener('keydown', e => { if (e.key === 'Enter') $('#tokok').
 async function boot(){
   if (!token) return askToken();
   try {
-    const c = await api('/test/api/catalog');
+    const bl = await api('/test/api/branches');
+    if (!bl.some(b => b.key === branch)) branch = (bl.find(b => b.primary) || bl[0]).key;
+    bsel.innerHTML = bl.map(b => `<option value="${esc(b.key)}">${esc(b.city)} · ${esc(b.instagram)}</option>`).join('');
+    bsel.value = branch; bsel.hidden = bl.length < 2;
+  } catch(e){}
+  try {
+    const c = await api('/test/api/catalog?branch=' + encodeURIComponent(branch));
     $('#st-cat').className = 'ok'; $('#st-cat').innerHTML = `<i class="dot"></i>прайс: ${c.products} товаров, Trade-in: ${c.tradein}`;
     $('#st-model').textContent = 'модель: ' + c.model;
   } catch(e){ $('#st-cat').className = 'bad'; $('#st-cat').innerHTML = '<i class="dot"></i>' + esc(e.message); return; }
   log.innerHTML = '';
   try {
-    const h = await api('/test/api/history?session=' + encodeURIComponent(session));
+    const h = await api('/test/api/history?session=' + encodeURIComponent(session) + '&branch=' + encodeURIComponent(branch));
     if (!h.messages.length) sys('Напишите сообщение так, как написал бы клиент в директ. Можно прикрепить фото.');
     h.messages.forEach(m => bubble(m.role === 'user' ? 'me' : m.role === 'manager' ? 'mgr' : 'bot', m.content,
                        m.role === 'manager' ? {meta:'менеджер'} : null));
@@ -177,7 +187,7 @@ function renderPreview(){ preview.innerHTML = ''; files.forEach((f, i) => { cons
 
 $('#reset').onclick = async () => {
   if (!confirm('Начать новый диалог? Текущий тестовый диалог будет удалён.')) return;
-  try { await api('/test/api/reset', {method:'POST', body: new URLSearchParams({session})}); } catch(e){}
+  try { await api('/test/api/reset', {method:'POST', body: new URLSearchParams({session, branch})}); } catch(e){}
   session = newSession(); showCard(''); boot();
 };
 
@@ -189,7 +199,7 @@ $('#f').onsubmit = async e => {
   busy = true; $('#send').disabled = true;
   const thumbs = files.map(f => URL.createObjectURL(f));
   bubble(asMgr ? 'mgr' : 'me', text, {thumbs, meta: asMgr ? 'менеджер' : ''});
-  const fd = new FormData(); fd.append('session', session); fd.append('text', text); fd.append('as_manager', asMgr ? 'true' : 'false');
+  const fd = new FormData(); fd.append('session', session); fd.append('text', text); fd.append('as_manager', asMgr ? 'true' : 'false'); fd.append('branch', branch);
   files.forEach(f => fd.append('files', f));
   t.value = ''; files = []; renderPreview(); autosize();
   let typing;

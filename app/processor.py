@@ -7,7 +7,10 @@ import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from dataclasses import dataclass, field
+
 from .agent import IncomingImage, SalesAgent
+from .branches import Branch, primary_from_settings
 from .config import Settings
 from .db import Store, utcnow
 from .instagram import Event, InstagramClient
@@ -16,11 +19,42 @@ from .sheets import CatalogProvider
 
 log = logging.getLogger(__name__)
 
-def fallback_text(s: Settings) -> str:
+def fallback_text(b) -> str:
+    """b — Branch (или Settings, для совместимости)."""
     base = "Извините, сейчас не получается ответить автоматически."
-    if s.store_whatsapp:
-        return f"{base} Напишите, пожалуйста, менеджеру в WhatsApp: {s.store_whatsapp}"
+    wa = getattr(b, "whatsapp", None) or getattr(b, "store_whatsapp", "")
+    if wa:
+        return f"{base} Напишите, пожалуйста, менеджеру в WhatsApp: {wa}"
     return f"{base} Менеджер ответит вам здесь в ближайшее время."
+
+
+@dataclass
+class BranchRuntime:
+    """Всё, что нужно для ответа в Instagram конкретного филиала."""
+    branch: Branch
+    ig: InstagramClient
+    agent: SalesAgent
+    catalogs: CatalogProvider
+    account_ids: set[str] = field(default_factory=set)  # ID аккаунта в вебхуках (из настроек или от Instagram)
+
+    def __post_init__(self):
+        if self.branch.account_id:
+            self.account_ids.add(self.branch.account_id)
+
+    async def resolve_account_ids(self) -> None:
+        """Спрашивает у Instagram ID аккаунта по маркеру (на случай, если в настройках его нет или он другой)."""
+        me = getattr(self.ig, "me", None)
+        if not self.branch.active or me is None:
+            return
+        try:
+            info = await me()
+        except Exception as e:
+            log.warning("Филиал %s: не удалось проверить маркер Instagram: %s", self.branch.key, e)
+            return
+        ids = {str(info.get(k)) for k in ("user_id", "id") if info.get(k)}
+        self.account_ids |= ids
+        log.info("Филиал %s (%s): Instagram @%s, ID %s", self.branch.key, self.branch.city,
+                 info.get("username", "?"), ", ".join(sorted(ids)))
 
 OPT_OUT_RX = re.compile(
     r"(не\s+пиш|больше\s+не\s+пиш|не\s+надо\s+пис|отпиш|жазба|жазбаңыз|хабарласпа|"
@@ -50,18 +84,71 @@ def _render_user_text(ev: Event) -> str:
 
 class Processor:
     def __init__(self, settings: Settings, store: Store, ig: InstagramClient, agent: SalesAgent,
-                 catalogs: CatalogProvider):
+                 catalogs: CatalogProvider, runtimes: list[BranchRuntime] | None = None):
         self.s = settings
         self.store = store
-        self.ig = ig
-        self.agent = agent
-        self.catalogs = catalogs
+        if not runtimes:
+            branch = getattr(agent, "branch", None) or primary_from_settings(settings)
+            runtimes = [BranchRuntime(branch, ig, agent, catalogs)]
+        self.runtimes: dict[str, BranchRuntime] = {rt.branch.key: rt for rt in runtimes}
+        self.primary = next((rt for rt in runtimes if rt.branch.primary), runtimes[0])
+        self._unknown_accounts: set[str] = set()
         self._debounce: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         # фото ждут обработки: (id сообщения в БД, ссылка Instagram). Ссылки живут только в памяти.
         self._pending_images: dict[str, list[tuple[int, str]]] = {}
         self._img_sem = asyncio.Semaphore(max(1, settings.image_concurrency))
         self._bg: set[asyncio.Task] = set()
+
+    # основной филиал — для совместимости со старым кодом и тестами
+    @property
+    def ig(self):
+        return self.primary.ig
+
+    @ig.setter
+    def ig(self, value):
+        self.primary.ig = value
+
+    @property
+    def agent(self):
+        return self.primary.agent
+
+    @agent.setter
+    def agent(self, value):
+        self.primary.agent = value
+
+    @property
+    def catalogs(self):
+        return self.primary.catalogs
+
+    # ------------------------------------------------------------------ филиалы
+    async def resolve_accounts(self) -> None:
+        for rt in self.runtimes.values():
+            await rt.resolve_account_ids()
+
+    def _match(self, account_id: str) -> BranchRuntime | None:
+        return next((rt for rt in self.runtimes.values() if account_id in rt.account_ids), None)
+
+    async def runtime_for_account(self, account_id: str) -> BranchRuntime:
+        rt = self._match(account_id)
+        if rt is None and account_id and any(r.branch.active and not r.account_ids for r in self.runtimes.values()):
+            await self.resolve_accounts()  # маркер добавили, а ID ещё не знаем — спросим у Instagram
+            rt = self._match(account_id)
+        if rt is None:
+            if len(self.runtimes) > 1 and account_id not in self._unknown_accounts:
+                self._unknown_accounts.add(account_id)
+                log.warning("Сообщение для аккаунта %s, который не привязан ни к одному филиалу — отвечаем как "
+                            "основной филиал (%s). Проверьте маркеры IG_ACCESS_TOKEN_*.", account_id,
+                            self.primary.branch.city)
+            rt = self.primary
+        return rt
+
+    def split_key(self, key: str) -> tuple[BranchRuntime, str]:
+        """Ключ диалога → (филиал, IGSID клиента)."""
+        prefix, sep, rest = key.partition(":")
+        if sep and prefix in self.runtimes and not self.runtimes[prefix].branch.primary:
+            return self.runtimes[prefix], rest
+        return self.primary, key
 
     # ------------------------------------------------------------------ утилиты
     def _spawn(self, coro) -> asyncio.Task:
@@ -78,36 +165,39 @@ class Processor:
 
     # ------------------------------------------------------------------ вход
     async def handle_event(self, ev: Event) -> None:
-        if self.s.ig_account_id and ev.user_id == self.s.ig_account_id:
+        rt = await self.runtime_for_account(ev.account_id)
+        if ev.user_id in rt.account_ids or (self.s.ig_account_id and ev.user_id == self.s.ig_account_id):
             return
+        key = rt.branch.conv_key(ev.user_id)
         if ev.kind == "echo":
-            await self._handle_echo(ev)
+            await self._handle_echo(ev, key)
         else:
-            await self._handle_incoming(ev)
+            await self._handle_incoming(ev, key)
 
-    async def _handle_incoming(self, ev: Event) -> None:
+    async def _handle_incoming(self, ev: Event, key: str | None = None) -> None:
+        key = key or ev.user_id
         if self.s.allowed_user_ids and ev.user_id not in self.s.allowed_user_ids:
-            log.info("Пропуск %s: не в ALLOWED_USER_IDS", ev.user_id)
+            log.info("Пропуск %s: не в ALLOWED_USER_IDS", key)
             return
         text = _render_user_text(ev)
         if not text:
             return
-        await self._db(self.store.get_conv, ev.user_id)
-        added = await self._db(self.store.add_message, ev.user_id, "user", text, ev.mid, False)
+        await self._db(self.store.get_conv, key)
+        added = await self._db(self.store.add_message, key, "user", text, ev.mid, False)
         if not added:
             return  # повтор вебхука
         now = utcnow()
         fields = {"last_user_at": now, "followup_sent": False}
         if OPT_OUT_RX.search(ev.text or ""):
             fields["opted_out"] = True
-        await self._db(self.store.update_conv, ev.user_id, **fields)
+        await self._db(self.store.update_conv, key, **fields)
         imgs = [a.url for a in ev.attachments if a.type == "image" and a.url]
         if imgs:
-            queue = self._pending_images.setdefault(ev.user_id, [])
+            queue = self._pending_images.setdefault(key, [])
             for url in imgs:
                 if len(queue) < self.s.max_images_per_message:
                     queue.append((added, url))
-        self._schedule(ev.user_id)
+        self._schedule(key)
 
     def _schedule(self, user_id: str, delay: float | None = None) -> None:
         old = self._debounce.get(user_id)
@@ -123,7 +213,8 @@ class Processor:
 
         self._debounce[user_id] = self._spawn(later())
 
-    async def _handle_echo(self, ev: Event) -> None:
+    async def _handle_echo(self, ev: Event, key: str | None = None) -> None:
+        key = key or ev.user_id
         role = await self._db(self.store.message_role_by_mid, ev.mid)
         if role in ("assistant", "manager"):
             return
@@ -133,18 +224,18 @@ class Processor:
         if role in ("assistant", "manager"):
             return
         now = utcnow()
-        await self._db(self.store.get_conv, ev.user_id)
-        await self._db(self.store.add_message, ev.user_id, "manager", _render_user_text(ev) or "[вложение]", ev.mid)
+        await self._db(self.store.get_conv, key)
+        await self._db(self.store.add_message, key, "manager", _render_user_text(ev) or "[вложение]", ev.mid)
         # всё, что клиент написал до ответа менеджера, считаем обработанным менеджером
-        await self._db(self.store.mark_all_processed_before, ev.user_id, now)
-        await self._db(self.store.update_conv, ev.user_id,
+        await self._db(self.store.mark_all_processed_before, key, now)
+        await self._db(self.store.update_conv, key,
                        paused_until=now + timedelta(minutes=self.s.manager_pause_minutes),
                        last_manager_at=now, followup_sent=True)
-        t = self._debounce.get(ev.user_id)
+        t = self._debounce.get(key)
         if t and not t.done():
             t.cancel()
-        self._pending_images.pop(ev.user_id, None)
-        log.info("Менеджер ответил %s — бот на паузе %s мин", ev.user_id, self.s.manager_pause_minutes)
+        self._pending_images.pop(key, None)
+        log.info("Менеджер ответил %s — бот на паузе %s мин", key, self.s.manager_pause_minutes)
 
     # ------------------------------------------------------------------ обработка
     def _blocked(self, conv: dict) -> str | None:
@@ -157,6 +248,9 @@ class Processor:
         return None
 
     async def process_user(self, user_id: str, followup: bool = False) -> None:
+        if user_id.startswith("web-test:"):
+            return  # тестовые диалоги со страницы /test в Instagram не отправляются
+        rt, igsid = self.split_key(user_id)
         async with self._lock(user_id):
             conv = await self._db(self.store.get_conv, user_id)
             reason = self._blocked(conv)
@@ -176,16 +270,16 @@ class Processor:
                                 "Без нового приветствия, если вы уже здоровались сегодня. Без ссылок и давления.")
                 extra_note = "[служебное событие: прошло 3 часа без ответа клиента]"
 
-            await self.ig.typing(user_id, True)
+            await rt.ig.typing(igsid, True)
             try:
-                catalog = await self.catalogs.get()
-                result = await self.agent.reply(history, conv["state"], catalog, images,
+                catalog = await rt.catalogs.get()
+                result = await rt.agent.reply(history, conv["state"], catalog, images,
                                                 extra_system=extra_system, extra_user_note=extra_note)
                 text = result.text
                 new_state = result.state
             except Exception:
                 log.exception("Ошибка генерации ответа для %s", user_id)
-                text, new_state = ("" if followup else fallback_text(self.s)), conv["state"]
+                text, new_state = ("" if followup else fallback_text(rt.branch)), conv["state"]
 
             if not text:
                 await self._db(self.store.mark_processed, [m["id"] for m in pending])
@@ -204,7 +298,7 @@ class Processor:
                     return
 
             try:
-                mids = await self.ig.send_text(user_id, text)
+                mids = await rt.ig.send_text(igsid, text)
             except Exception:
                 log.exception("Не удалось отправить сообщение %s", user_id)
                 return
@@ -224,14 +318,16 @@ class Processor:
         Возвращает уменьшенные картинки для текущего ответа; после ответа они просто выбрасываются.
         """
         out: list[IncomingImage] = []
+        rt, _ = self.split_key(user_id)
         for msg_id, url in self._pending_images.pop(user_id, []):
             async with self._img_sem:  # не больше N фото одновременно на весь сервер
-                note = await self._process_one_image(url, out)
+                note = await self._process_one_image(url, out, rt)
             await self._db(self._replace_photo_note, msg_id, note)
         return out
 
-    async def _process_one_image(self, url: str, out: list[IncomingImage]) -> str:
-        got = await self.ig.download(url, max_bytes=self.s.max_image_mb * 1024 * 1024)
+    async def _process_one_image(self, url: str, out: list[IncomingImage], rt: BranchRuntime | None = None) -> str:
+        rt = rt or self.primary
+        got = await rt.ig.download(url, max_bytes=self.s.max_image_mb * 1024 * 1024)
         if not got:
             return "[фото: не удалось загрузить или файл слишком большой]"
         small = await asyncio.to_thread(shrink, got[0])
@@ -239,7 +335,7 @@ class Processor:
         if not small:
             return "[фото: файл не распознан как изображение]"
         out.append(IncomingImage(*small))
-        text = await describe(self.agent.client, self.s.vision_model, small[0], small[1])
+        text = await describe(rt.agent.client, self.s.vision_model, small[0], small[1])
         return f"[фото: {text}]" if text else "[клиент отправил фото — описание недоступно]"
 
     def _replace_photo_note(self, msg_id: int, note: str) -> None:

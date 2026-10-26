@@ -78,3 +78,40 @@ def test_manager_mode(client):
     assert r["reply"] == "" and "менеджер" in r["note"]
     h = client.get("/test/api/history", params={"session": "s3"}, headers=H).json()
     assert h["messages"][0]["role"] == "manager"
+
+
+def test_branch_selection(tmp_path, monkeypatch):
+    import json, importlib
+    bf = tmp_path / "branches.json"
+    bf.write_text(json.dumps([{"key": "shymkent", "city": "Шымкент", "instagram": "@nur.shym",
+                               "address": "Тауке хана 1", "hours": "10–21"}], ensure_ascii=False), encoding="utf-8")
+    for k, v in {"ADMIN_TOKEN": "adm", "DATABASE_URL": f"sqlite:///{tmp_path}/b.db", "PRICE_FILE": str(FIXTURE),
+                 "ANTHROPIC_API_KEY": "test", "BRANCHES_FILE": str(bf), "IG_ACCESS_TOKEN_SHYMKENT": "tok"}.items():
+        monkeypatch.setenv(k, v)
+    import app.config, app.testchat, app.main, app.instagram
+
+    async def fake_me(self):
+        return {"user_id": "SHY", "username": "nur.shym"}
+    monkeypatch.setattr(app.instagram.InstagramClient, "me", fake_me)
+    importlib.reload(app.config); importlib.reload(app.testchat); importlib.reload(app.main)
+    from fastapi.testclient import TestClient
+    from app.agent import AgentResult
+
+    with TestClient(app.main.app) as c:
+        proc = app.main.app.state.proc
+        seen = {}
+        for key, rt in proc.runtimes.items():
+            async def reply(history, state, catalog, images=None, _k=key, **kw):
+                seen.setdefault(_k, 0)
+                seen[_k] += 1
+                return AgentResult(f"{_k}", state, [])
+            rt.agent.reply = reply
+        bl = c.get("/test/api/branches", headers=H).json()
+        assert [b["key"] for b in bl] == ["astana", "shymkent"]
+        assert proc.runtimes["shymkent"].account_ids == {"SHY"}
+        r = c.post("/test/api/message", data={"session": "s", "text": "привет", "branch": "shymkent"}, headers=H).json()
+        assert r["reply"] == "shymkent"
+        r = c.post("/test/api/message", data={"session": "s", "text": "привет"}, headers=H).json()
+        assert r["reply"] == "astana"
+        h1 = c.get("/test/api/history", params={"session": "s", "branch": "shymkent"}, headers=H).json()
+        assert len(h1["messages"]) == 2  # диалоги филиалов не смешиваются

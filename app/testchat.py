@@ -28,10 +28,22 @@ def _check(token: str | None) -> None:
         raise HTTPException(401, "Неверный ключ доступа (ADMIN_TOKEN)")
 
 
-def _uid(session: str) -> str:
+def _runtime(request: Request, branch: str | None):
+    proc = request.app.state.proc
+    if not branch:
+        return proc.primary
+    rt = proc.runtimes.get(branch)
+    if rt is None:
+        raise HTTPException(400, f"Нет филиала {branch}")
+    return rt
+
+
+def _uid(session: str, rt=None) -> str:
     session = re.sub(r"[^A-Za-z0-9_-]", "", session)[:40]
     if not session:
         raise HTTPException(400, "Пустая сессия")
+    if rt is not None and not rt.branch.primary:
+        return f"{PREFIX}{rt.branch.key}:{session}"
     return PREFIX + session
 
 
@@ -41,14 +53,22 @@ async def page():
     return html.replace("{{STORE_NAME}}", settings.store_name).replace("{{STORE_INSTAGRAM}}", settings.store_instagram)
 
 
+@router.get("/test/api/branches")
+async def branches(request: Request, x_admin_token: str | None = Header(default=None)):
+    _check(x_admin_token)
+    return [{"key": rt.branch.key, "city": rt.branch.city, "instagram": rt.branch.instagram,
+             "primary": rt.branch.primary} for rt in request.app.state.proc.runtimes.values()]
+
+
 @router.post("/test/api/message")
 async def message(request: Request, session: str = Form(...), text: str = Form(""),
-                  as_manager: bool = Form(False), files: list[UploadFile] = File(default=[]),
+                  as_manager: bool = Form(False), branch: str = Form(""), files: list[UploadFile] = File(default=[]),
                   x_admin_token: str | None = Header(default=None)):
     _check(x_admin_token)
-    uid = _uid(session)
+    rt = _runtime(request, branch)
+    uid = _uid(session, rt)
     st = request.app.state
-    store, proc = st.store, st.proc
+    store = st.store
     text = text.strip()
     files = [f for f in files if f and f.filename][: settings.max_images_per_message]
     if not text and not files:
@@ -77,16 +97,16 @@ async def message(request: Request, session: str = Form(...), text: str = Form("
             notes.append("[фото: файл не распознан как изображение]")
             continue
         images.append(IncomingImage(*small))
-        desc = await describe(proc.agent.client, settings.vision_model, small[0], small[1])
+        desc = await describe(rt.agent.client, settings.vision_model, small[0], small[1])
         notes.append(f"[фото: {desc}]" if desc else "[клиент отправил фото — описание недоступно]")
 
     content = " ".join(notes + ([text] if text else []))
     await asyncio.to_thread(store.add_message, uid, "user", content)
     history = await asyncio.to_thread(store.history, uid, settings.history_limit)
 
-    catalog = await st.catalogs.get()
+    catalog = await rt.catalogs.get()
     try:
-        result = await proc.agent.reply(history, conv["state"], catalog, images)
+        result = await rt.agent.reply(history, conv["state"], catalog, images)
     except Exception as e:
         raise HTTPException(502, f"Ошибка модели: {e.__class__.__name__}: {str(e)[:300]}")
 
@@ -102,9 +122,9 @@ async def message(request: Request, session: str = Form(...), text: str = Form("
 
 
 @router.get("/test/api/history")
-async def history(request: Request, session: str, x_admin_token: str | None = Header(default=None)):
+async def history(request: Request, session: str, branch: str = "", x_admin_token: str | None = Header(default=None)):
     _check(x_admin_token)
-    uid = _uid(session)
+    uid = _uid(session, _runtime(request, branch))
     rows = await asyncio.to_thread(request.app.state.store.history, uid, 100)
     conv = await asyncio.to_thread(request.app.state.store.get_conv, uid)
     return {"messages": [{"role": r["role"], "content": r["content"]} for r in rows if r["content"]],
@@ -112,14 +132,15 @@ async def history(request: Request, session: str, x_admin_token: str | None = He
 
 
 @router.post("/test/api/reset")
-async def reset(request: Request, session: str = Form(...), x_admin_token: str | None = Header(default=None)):
+async def reset(request: Request, session: str = Form(...), branch: str = Form(""),
+                x_admin_token: str | None = Header(default=None)):
     _check(x_admin_token)
-    await asyncio.to_thread(request.app.state.store.delete_conversation, _uid(session))
+    await asyncio.to_thread(request.app.state.store.delete_conversation, _uid(session, _runtime(request, branch)))
     return {"ok": True}
 
 
 @router.get("/test/api/catalog")
-async def catalog_info(request: Request, x_admin_token: str | None = Header(default=None)):
+async def catalog_info(request: Request, branch: str = "", x_admin_token: str | None = Header(default=None)):
     _check(x_admin_token)
-    cat = await request.app.state.catalogs.get()
+    cat = await _runtime(request, branch).catalogs.get()
     return {**cat.stats(), "model": settings.anthropic_model, "checked_at": utcnow().isoformat(timespec="seconds")}
