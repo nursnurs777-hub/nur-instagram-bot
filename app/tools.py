@@ -86,6 +86,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "new_model": {"type": "string"},
                 "new_memory": {"type": "string"},
                 "new_sim": {"type": "string", "enum": ["esim", "sim+esim"]},
+                "new_color": {"type": "string", "description": "Цвет, если цена в прайсе зависит от цвета"},
             },
             "required": ["new_model", "new_memory"],
         },
@@ -274,7 +275,8 @@ class ToolExecutor:
             out["estimate_text"] = format_price(result["estimate"])
         return out
 
-    def _t_calculate_tradein_topup(self, new_model: str, new_memory: str, new_sim: str | None = None) -> dict:
+    def _t_calculate_tradein_topup(self, new_model: str, new_memory: str, new_sim: str | None = None,
+                                   new_color: str | None = None) -> dict:
         saved = self.state.get("tradein")
         if not saved:
             return {"error": "Нет сохранённой оценки старого телефона — сначала собери данные и вызови quote_iphone_tradein."}
@@ -282,7 +284,7 @@ class ToolExecutor:
             return {"error": "Старый телефон требует индивидуальной оценки менеджером — доплату автоматически не считаем."}
         if label := discontinued_iphone(new_model):
             return _discontinued_result(label)
-        items, _ = self.catalog.find_exact(new_model, new_memory, new_sim)
+        items, _ = self.catalog.find_exact(new_model, new_memory, new_sim, new_color)
         if (upcoming := upcoming_model(new_model)) and _upcoming_unpriced(upcoming, items):
             return _upcoming_info(upcoming)
         items = [p for p in items if normalize_memory(new_memory) == p.memory]
@@ -291,7 +293,10 @@ class ToolExecutor:
         if not items:
             return {"error": "Новый телефон в такой конфигурации не найден в прайсе — доплату не называй."}
         if len(items) > 1:
-            return {"status": "need_sim", "note": "Цена нового телефона зависит от SIM — уточни у клиента.",
+            by_color = len({p.sim for p in items}) == 1 and any(p.color for p in items)
+            return {"status": "need_color" if by_color else "need_sim",
+                    "note": ("Цена нового телефона зависит от цвета — уточни цвет у клиента." if by_color
+                             else "Цена нового телефона зависит от SIM — уточни у клиента."),
                     "options": [p.to_tool() for p in items]}
         new = items[0]
         if new.price is None:

@@ -53,6 +53,8 @@ class BranchRuntime:
             return
         ids = {str(info.get(k)) for k in ("user_id", "id") if info.get(k)}
         self.account_ids |= ids
+        if not self.branch.instagram and info.get("username"):
+            self.branch.instagram = "@" + info["username"]
         log.info("Филиал %s (%s): Instagram @%s, ID %s", self.branch.key, self.branch.city,
                  info.get("username", "?"), ", ".join(sorted(ids)))
 
@@ -125,6 +127,9 @@ class Processor:
     async def resolve_accounts(self) -> None:
         for rt in self.runtimes.values():
             await rt.resolve_account_ids()
+        for rt in self.runtimes.values():  # Instagram филиала мог стать известен только сейчас
+            if hasattr(rt.agent, "rebuild_prompt"):
+                rt.agent.rebuild_prompt()
 
     def _match(self, account_id: str) -> BranchRuntime | None:
         return next((rt for rt in self.runtimes.values() if account_id in rt.account_ids), None)

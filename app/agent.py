@@ -100,7 +100,8 @@ def render_prompt(template: str, s: Settings, branch: Branch | None = None,
         "STORE_CITY": b.city,
         "STORE_ADDRESS": b.address,
         "STORE_HOURS": b.hours,
-        "WHATSAPP": b.whatsapp or NO_WHATSAPP,
+        "WHATSAPP": b.whatsapp or (f"(WhatsApp не указан — для брони, наличия и оформления дай телефон филиала "
+                                   f"{b.phone}: позвонить или написать менеджеру)" if b.phone else NO_WHATSAPP),
         "DELIVERY": b.delivery,
         "BRANCHES_NOTE": branches_note(b, branches or [b]),
         "KASPI_MARKUP": f"{s.kaspi_markup_percent:g}",
@@ -163,7 +164,12 @@ class SalesAgent:
         self.s = settings
         self.client = client or AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.branch = branch or primary_from_settings(settings)
-        self.base_prompt = _load_prompt(settings.system_prompt_path, settings, self.branch, branches)
+        self.branches = branches
+        self.rebuild_prompt()
+
+    def rebuild_prompt(self) -> None:
+        """Пересобирает промпт (например, когда стал известен Instagram филиала)."""
+        self.base_prompt = _load_prompt(self.s.system_prompt_path, self.s, self.branch, self.branches)
 
     def _tools(self) -> list[dict]:
         tools = list(TOOL_DEFINITIONS)

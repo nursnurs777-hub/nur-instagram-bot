@@ -49,7 +49,8 @@ class Branch:
         return igsid if self.primary else f"{self.key}:{igsid}"
 
     def contact_line(self) -> str:
-        bits = [f"Instagram {self.instagram}", f"адрес: {self.address}", f"часы: {self.hours}"]
+        bits = ([f"Instagram {self.instagram}"] if self.instagram else []) + [f"адрес: {self.address}",
+                                                                              f"часы: {self.hours}"]
         if self.whatsapp:
             bits.append(f"WhatsApp: {self.whatsapp}")
         if self.phone:

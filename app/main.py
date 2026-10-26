@@ -36,7 +36,8 @@ async def lifespan(app: FastAPI):
     claude = AsyncAnthropic(api_key=settings.anthropic_api_key)
     providers: dict[str, CatalogProvider] = {}  # одна загрузка на таблицу, даже если она общая у филиалов
     runtimes = []
-    listed = [b for b in branches if b.primary or b.active]  # неактивные филиалы клиентам не называем
+    # филиалы с заполненным адресом называем клиентам, даже если бот в их Instagram ещё не подключён
+    listed = [b for b in branches if b.primary or b.address]
     for b in branches:
         if not b.primary and not b.active:
             continue
