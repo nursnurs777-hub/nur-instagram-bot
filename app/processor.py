@@ -174,6 +174,7 @@ class Processor:
         if ev.user_id in rt.account_ids or (self.s.ig_account_id and ev.user_id == self.s.ig_account_id):
             return
         key = rt.branch.conv_key(ev.user_id)
+        log.info("[%s] %s от %s", rt.branch.key, "ответ с аккаунта" if ev.kind == "echo" else "сообщение", ev.user_id)
         if ev.kind == "echo":
             await self._handle_echo(ev, key)
         else:

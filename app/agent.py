@@ -237,7 +237,7 @@ class SalesAgent:
                     continue
                 called.append(block.name)
                 output, is_error = executor.run(block.name, dict(block.input or {}))
-                log.info("tool %s(%s) -> %s", block.name, block.input, output[:300])
+                log.info("[%s] tool %s(%s) -> %s", self.branch.key, block.name, block.input, output[:300])
                 results.append({"type": "tool_result", "tool_use_id": block.id,
                                 "content": output, "is_error": is_error})
             messages.append({"role": "assistant", "content": resp.content})
