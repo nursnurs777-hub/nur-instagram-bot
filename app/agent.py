@@ -108,6 +108,12 @@ def render_prompt(template: str, s: Settings, branch: Branch | None = None,
     }
     for k, v in values.items():
         template = template.replace("{{" + k + "}}", v)
+    template = re.sub(r"<!--DISCONTINUED-->\n(.*?)<!--/DISCONTINUED-->\n",
+                      (lambda m: m.group(1)) if b.discontinued_rule else
+                      (lambda m: "### Старые модели iPhone\n\nПродаём модели, которые есть в актуальном прайсе филиала "
+                                 "(в том числе прошлых поколений). Если модели нет в прайсе — предложи доступную "
+                                 "альтернативу из прайса или уточнение у менеджера.\n"),
+                      template, flags=re.S)
     return template
 
 
@@ -204,7 +210,8 @@ class SalesAgent:
                     images: list[IncomingImage] | None = None, extra_system: str | None = None,
                     extra_user_note: str | None = None) -> AgentResult:
         state = dict(state)
-        executor = ToolExecutor(catalog, state, self.s.kaspi_markup_percent, self.s.kaspi_months)
+        executor = ToolExecutor(catalog, state, self.s.kaspi_markup_percent, self.s.kaspi_months,
+                                discontinued_rule=getattr(self.branch, "discontinued_rule", True))
         messages = build_messages(history, images, extra_user_note)
         if not messages:
             return AgentResult("", state)

@@ -111,6 +111,8 @@ def normalize_sim(raw: str | None) -> str | None:
     s = norm(raw)
     if not s:
         return None
+    if "dual" in s or re.search(r"(?<![0-9])2 ?sim", s) or "две sim" in s or "2 физ" in s:
+        return "dual"
     if "sim" in s.replace("esim", "") or "nano" in s or "физ" in s or "dual" in s or "2" in s.split():
         return "sim+esim"
     if "esim" in s or "только" in s or "only" in s:
@@ -118,7 +120,7 @@ def normalize_sim(raw: str | None) -> str | None:
     return None
 
 
-SIM_LABELS = {"sim+esim": "SIM + eSIM", "esim": "только eSIM"}
+SIM_LABELS = {"sim+esim": "SIM + eSIM", "esim": "только eSIM", "dual": "2 SIM (Dual SIM)"}
 
 # ---------------------------------------------------------------- модели данных
 

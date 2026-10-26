@@ -146,3 +146,36 @@ def test_branches_note_lists_others():
     b = Branch("shymkent", "Шымкент", "в Шымкенте", "NUR", "@nur.shym", "Тауке хана 1", "10–21")
     note = branches_note(b, [a, b])
     assert "филиала в Шымкенте" in note and "Төле би 52" in note and "Тауке хана" not in note
+
+
+def test_dual_sim_and_discontinued_flag():
+    from app.catalog import Catalog, normalize_sim
+    from app.tools import ToolExecutor
+    assert normalize_sim("2 SIM (Dual SIM)") == "dual" and normalize_sim("Dual SIM") == "dual"
+    assert normalize_sim("1 SIM + eSIM") == "sim+esim" and normalize_sim("только eSIM") == "esim"
+    rows = [["Модель", "Память", "Тип SIM", "Цена", "Показать"],
+            ["iPhone 17 Pro", "256GB", "1 SIM + eSIM", "600 000 ₸", "Да"],
+            ["iPhone 17 Pro", "256GB", "2 SIM (Dual SIM)", "660 000 ₸", "Да"],
+            ["iPhone 16 Pro Max", "256GB", "", "650 000 ₸", "Да"]]
+    cat = Catalog({"iphone": rows})
+    r = json.loads(ToolExecutor(cat, {}).run("get_exact_price", {"model": "iPhone 17 Pro", "memory": "256",
+                                                                  "sim": "dual"})[0])
+    assert [i["price_kzt"] for i in r["items"]] == [660000]
+    r = json.loads(ToolExecutor(cat, {}).run("get_exact_price", {"model": "iPhone 17 Pro", "memory": "256",
+                                                                  "sim": "sim+esim"})[0])
+    assert [i["price_kzt"] for i in r["items"]] == [600000]
+    # Астана: 16 Pro Max «снят с производства»; Шымкент продаёт по прайсу
+    on = json.loads(ToolExecutor(cat, {}).run("get_exact_price", {"model": "iPhone 16 Pro Max"})[0])
+    off = json.loads(ToolExecutor(cat, {}, discontinued_rule=False).run("get_exact_price",
+                                                                       {"model": "iPhone 16 Pro Max"})[0])
+    assert on["status"] == "discontinued" and off["items"][0]["price_kzt"] == 650000
+
+
+def test_prompt_discontinued_section_per_branch(tmp_path, monkeypatch):
+    s = settings(tmp_path)
+    data = dict(SHYM, discontinued_rule=False)
+    monkeypatch.setenv("IG_ACCESS_TOKEN_SHYMKENT", "x")
+    ast, shym = load_branches(s, branches_file(tmp_path, [data]))
+    p_ast, p_shym = render_prompt(TPL, s, ast, [ast, shym]), render_prompt(TPL, s, shym, [ast, shym])
+    assert "снят с производства" in p_ast and "<!--" not in p_ast
+    assert "снят с производства" not in p_shym and "прошлых поколений" in p_shym and "<!--" not in p_shym

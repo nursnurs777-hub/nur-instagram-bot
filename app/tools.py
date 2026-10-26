@@ -40,8 +40,8 @@ TOOL_DEFINITIONS: list[dict] = [
             "properties": {
                 "model": {"type": "string", "description": "Модель, например «iPhone 18 Pro Max», «MacBook Air 13” M5»"},
                 "memory": {"type": "string", "description": "Память или конфигурация: «256GB», «1TB», «16/512GB»"},
-                "sim": {"type": "string", "enum": ["esim", "sim+esim"],
-                        "description": "esim — только eSIM; sim+esim — физическая SIM + eSIM"},
+                "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"],
+                        "description": "esim — только eSIM; sim+esim — физическая SIM + eSIM; dual — две физические SIM (Dual SIM)"},
                 "color": {"type": "string"},
             },
             "required": ["model"],
@@ -60,7 +60,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "properties": {
                 "model": {"type": "string", "description": "Например «iPhone 15 Pro»"},
                 "memory": {"type": "string", "description": "«128GB», «256GB», «1TB»"},
-                "sim": {"type": "string", "enum": ["esim", "sim+esim"],
+                "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"],
                         "description": "Нужно только если в таблице есть оба варианта (iPhone 17 серии)"},
                 "battery_percent": {"type": "integer", "minimum": 0, "maximum": 100},
                 "has_box": {"type": "boolean"},
@@ -85,7 +85,7 @@ TOOL_DEFINITIONS: list[dict] = [
             "properties": {
                 "new_model": {"type": "string"},
                 "new_memory": {"type": "string"},
-                "new_sim": {"type": "string", "enum": ["esim", "sim+esim"]},
+                "new_sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"]},
                 "new_color": {"type": "string", "description": "Цвет, если цена в прайсе зависит от цвета"},
             },
             "required": ["new_model", "new_memory"],
@@ -105,7 +105,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "basis": {"type": "string", "enum": ["product", "tradein_topup"]},
                 "model": {"type": "string"},
                 "memory": {"type": "string"},
-                "sim": {"type": "string", "enum": ["esim", "sim+esim"]},
+                "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"]},
                 "color": {"type": "string"},
                 "months": {"type": "integer", "description": "По умолчанию 24"},
             },
@@ -186,7 +186,9 @@ def _discontinued_result(label: str) -> dict:
 class ToolExecutor:
     """Выполняет вызовы инструментов. `state` — изменяемый словарь карточки диалога (сохраняется в БД)."""
 
-    def __init__(self, catalog: Catalog, state: dict, kaspi_markup_percent: float = 20, kaspi_months: int = 24):
+    def __init__(self, catalog: Catalog, state: dict, kaspi_markup_percent: float = 20, kaspi_months: int = 24,
+                 discontinued_rule: bool = True):
+        self.discontinued_rule = discontinued_rule
         self.catalog = catalog
         self.state = state
         self.kaspi_markup = kaspi_markup_percent
@@ -208,7 +210,7 @@ class ToolExecutor:
 
     # ------------------------------------------------------------------ розница
     def _t_search_products(self, query: str) -> dict:
-        if label := discontinued_iphone(query):
+        if self.discontinued_rule and (label := discontinued_iphone(query)):
             return _discontinued_result(label)
         found = self.catalog.search(query)
         upcoming = upcoming_model(query)
@@ -220,7 +222,7 @@ class ToolExecutor:
 
     def _t_get_exact_price(self, model: str, memory: str | None = None, sim: str | None = None,
                            color: str | None = None) -> dict:
-        if label := discontinued_iphone(model):
+        if self.discontinued_rule and (label := discontinued_iphone(model)):
             return _discontinued_result(label)
         items, exact = self.catalog.find_exact(model, memory, sim, color)
         upcoming = upcoming_model(model)
@@ -282,7 +284,7 @@ class ToolExecutor:
             return {"error": "Нет сохранённой оценки старого телефона — сначала собери данные и вызови quote_iphone_tradein."}
         if saved.get("status") != "ok":
             return {"error": "Старый телефон требует индивидуальной оценки менеджером — доплату автоматически не считаем."}
-        if label := discontinued_iphone(new_model):
+        if self.discontinued_rule and (label := discontinued_iphone(new_model)):
             return _discontinued_result(label)
         items, _ = self.catalog.find_exact(new_model, new_memory, new_sim, new_color)
         if (upcoming := upcoming_model(new_model)) and _upcoming_unpriced(upcoming, items):
