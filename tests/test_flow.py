@@ -304,3 +304,39 @@ def test_prompt_rendered_with_store_details():
     assert "не выдумывай номер" in out
     out2 = render_prompt(tpl, replace(s, store_whatsapp="https://wa.me/77000000000"))
     assert "https://wa.me/77000000000" in out2
+
+
+# ------------------------------------------------------------ повторные касания
+
+def _ripe(proc, user_hours_ago, bot_hours_ago):
+    now = utcnow()
+    proc.store.update_conv("U1", last_user_at=now - timedelta(hours=user_hours_ago),
+                           last_bot_at=now - timedelta(hours=bot_hours_ago), followup_sent=False)
+
+
+@pytest.mark.parametrize("hours,user_ago,expect", [
+    ((0, 24), 4, 1),     # в окне часов и в 23-часовом окне Meta → одно напоминание
+    ((0, 24), 22.5, 1),  # утром после ночи, окно Meta ещё открыто
+    ((0, 24), 23.5, 0),  # окно Meta (с запасом 23 ч) истекло → не пишем
+    ((0, 0), 4, 0),      # вне разрешённых часов → не пишем
+])
+def test_followup_respects_window(tmp_path, hours, user_ago, expect):
+    async def go():
+        proc, ig, _ = make(tmp_path, followup_enabled=True,
+                           followup_hour_start=hours[0], followup_hour_end=hours[1])
+        await proc.handle_event(msg("a", "сколько стоит 17 про?"))
+        await settle(proc)
+        assert len(ig.sent) == 1
+        _ripe(proc, user_ago, user_ago - 0.01 if user_ago < 3.5 else user_ago - 0.5)
+        await proc.tick()
+        await settle(proc)
+        assert len(ig.sent) == 1 + expect
+        await proc.tick()  # второго напоминания не бывает
+        await settle(proc)
+        assert len(ig.sent) == 1 + expect
+    asyncio.run(go())
+
+
+def test_followup_default_hours():
+    s = Settings()
+    assert (s.followup_hour_start, s.followup_hour_end) == (9, 22)

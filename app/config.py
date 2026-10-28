@@ -100,6 +100,9 @@ class Settings:
     window_hours: int = field(default_factory=lambda: _int("WINDOW_HOURS", 23))
     work_hour_start: int = field(default_factory=lambda: _int("WORK_HOUR_START", 10))
     work_hour_end: int = field(default_factory=lambda: _int("WORK_HOUR_END", 20))
+    # окно для повторных касаний (по местному времени): с 9:00 до 22:00
+    followup_hour_start: int = field(default_factory=lambda: _int("FOLLOWUP_HOUR_START", 9))
+    followup_hour_end: int = field(default_factory=lambda: _int("FOLLOWUP_HOUR_END", 22))
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Asia/Almaty"))
 
     admin_token: str = field(default_factory=lambda: _env("ADMIN_TOKEN"))

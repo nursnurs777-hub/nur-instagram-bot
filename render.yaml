@@ -40,7 +40,7 @@ services:
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5-5
       - key: FOLLOWUP_ENABLED
-        value: "false"
+        value: "true"
 
 databases:
   - name: nur-db

@@ -271,10 +271,11 @@ class Processor:
 
             extra_system = extra_note = None
             if followup:
-                extra_system = ("СЛУЖЕБНО: клиент не отвечает около 3 часов после твоего вопроса. Напиши ОДНО короткое "
+                extra_system = ("СЛУЖЕБНО: клиент давно не отвечает на твой вопрос. Напиши ОДНО короткое "
                                 "ненавязчивое напоминание на языке клиента по теме разговора (пример из раздела 19). "
-                                "Без нового приветствия, если вы уже здоровались сегодня. Без ссылок и давления.")
-                extra_note = "[служебное событие: прошло 3 часа без ответа клиента]"
+                                "Без нового приветствия, если вы уже здоровались сегодня; если переписка была вчера, "
+                                "можно коротко поздороваться. Без ссылок и давления.")
+                extra_note = "[служебное событие: клиент не ответил на вопрос, это единственное напоминание]"
 
             await rt.ig.typing(igsid, True)
             try:
@@ -375,7 +376,8 @@ class Processor:
 
         if self.s.followup_enabled:
             local = datetime.now(ZoneInfo(self.s.timezone))
-            if self.s.work_hour_start <= local.hour < self.s.work_hour_end:
+            # Ночью не пишем; кто «созрел» ночью, получает напоминание утром, если 23-часовое окно ещё открыто
+            if self.s.followup_hour_start <= local.hour < self.s.followup_hour_end:
                 uids = await self._db(self.store.convs_for_followup, now,
                                       timedelta(minutes=self.s.followup_after_minutes),
                                       timedelta(hours=self.s.window_hours))
@@ -385,4 +387,5 @@ class Processor:
                     if not last or last["role"] != "assistant" or "?" not in last["content"][-200:]:
                         await self._db(self.store.update_conv, uid, followup_sent=True)
                         continue
+                    log.info("Повторное касание для %s", uid)
                     self._spawn(self.process_user(uid, followup=True))
