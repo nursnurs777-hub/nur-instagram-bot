@@ -144,12 +144,14 @@ def test_tradein_manager_review(catalog, kw):
     assert "error" in r2
 
 
-def test_tradein_17_needs_sim(catalog):
+def test_tradein_17_without_sim_takes_lower_price(catalog):
     ex = ToolExecutor(catalog, {})
     r, _ = run(ex, "quote_iphone_tradein", model="iPhone 17 Pro", memory="256", battery_percent=100,
                has_box=True, minor_scratches=False, was_repaired=False, screen_or_body_damage=False,
                all_functions_work=True)
-    assert r["status"] == "need_sim"
+    assert r["status"] == "ok" and "sim_note" in r
+    prices = [t.max_price for t in catalog.tradein_lookup("iPhone 17 Pro", "256")]
+    assert len(prices) > 1 and r["estimate"] == min(prices)
 
 
 def test_tradein_samsung_rejected(catalog):
@@ -271,3 +273,42 @@ def test_iphone_duo_rule_off_when_priced():
                               ["iPhone Duo", "256GB", "только eSIM", "900 000", "Да"]]})
     r, _ = run(TE(cat, {}), "get_exact_price", model="iPhone Duo", memory="256GB")
     assert "status" not in r and r["items"][0]["price_kzt"] == 900000
+
+
+# ------------------------------------------------------------ быстрая оценка: модель + память + аккумулятор
+
+def test_tradein_quick_quote_only_three_fields(catalog):
+    state = {}
+    r, err = run(ToolExecutor(catalog, state), "quote_iphone_tradein",
+                 model="iPhone 15 Pro", memory="256", battery_percent=90)
+    assert not err and r["status"] == "ok"
+    assert r["estimate"] == 230000  # лучший случай, без вычетов
+    assert "есть коробка" in r["say_to_client"] and "нет царапин и повреждений" in r["say_to_client"]
+    assert "base_price" not in r and "deductions" not in r
+    assert state["tradein"]["assumed"]
+
+
+def test_tradein_quick_quote_battery_still_counts(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "quote_iphone_tradein", model="iPhone 15 Pro", memory="256",
+               battery_percent=82)
+    assert r["estimate"] == 230000 - 10000
+
+
+def test_tradein_client_said_no_box(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "quote_iphone_tradein", model="iPhone 15 Pro", memory="256",
+               battery_percent=90, has_box=False)
+    assert r["estimate"] == 230000 - 10000
+    assert "есть коробка" not in r["say_to_client"]
+
+
+def test_tradein_quick_quote_low_battery_goes_to_manager(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "quote_iphone_tradein", model="iPhone 15 Pro", memory="256",
+               battery_percent=70)
+    assert r["status"] == "manager_review"
+
+
+def test_tradein_all_details_no_caveat(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "quote_iphone_tradein", model="iPhone 15 Pro", memory="256",
+               battery_percent=90, has_box=True, minor_scratches=False, was_repaired=False,
+               screen_or_body_damage=False, all_functions_work=True)
+    assert r["status"] == "ok" and "say_to_client" not in r

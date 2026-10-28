@@ -51,9 +51,11 @@ TOOL_DEFINITIONS: list[dict] = [
         "name": "quote_iphone_tradein",
         "description": (
             "Предварительная оценка СДАВАЕМОГО клиентом iPhone по таблице выкупа и утверждённым вычетам. "
-            "Вызывай, когда известны модель, память и состояние (аккумулятор, коробка, царапины, ремонт, "
-            "повреждения, работа функций). Результат сохраняется в карточке диалога; повторно вызывай только если "
-            "клиент изменил данные о старом телефоне. Samsung и другие бренды не принимаются."
+            "Вызывай, как только известны модель, память и процент аккумулятора — про SIM, коробку, царапины, "
+            "ремонт и повреждения НЕ спрашивай. Передавай эти поля, только если клиент сам о них сказал; "
+            "неуказанные считаются лучшим случаем (коробка есть, без царапин и повреждений, без ремонта, всё работает). "
+            "Результат сохраняется в карточке диалога; повторно вызывай, если клиент изменил или добавил данные "
+            "о старом телефоне. Samsung и другие бренды не принимаются."
         ),
         "input_schema": {
             "type": "object",
@@ -61,7 +63,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "model": {"type": "string", "description": "Например «iPhone 15 Pro»"},
                 "memory": {"type": "string", "description": "«128GB», «256GB», «1TB»"},
                 "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"],
-                        "description": "Нужно только если в таблице есть оба варианта (iPhone 17 серии)"},
+                        "description": "Только если клиент сам указал. Не спрашивай: без SIM берётся меньшая цена"},
                 "battery_percent": {"type": "integer", "minimum": 0, "maximum": 100},
                 "has_box": {"type": "boolean"},
                 "minor_scratches": {"type": "boolean"},
@@ -69,8 +71,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "screen_or_body_damage": {"type": "boolean", "description": "Существенные повреждения экрана/корпуса"},
                 "all_functions_work": {"type": "boolean"},
             },
-            "required": ["model", "memory", "battery_percent", "has_box", "minor_scratches", "was_repaired",
-                         "screen_or_body_damage", "all_functions_work"],
+            "required": ["model", "memory", "battery_percent"],
         },
     },
     {
@@ -238,9 +239,10 @@ class ToolExecutor:
         return res
 
     # ------------------------------------------------------------------ trade-in
-    def _t_quote_iphone_tradein(self, model: str, memory: str, battery_percent: int, has_box: bool,
-                                minor_scratches: bool, was_repaired: bool, screen_or_body_damage: bool,
-                                all_functions_work: bool, sim: str | None = None) -> dict:
+    def _t_quote_iphone_tradein(self, model: str, memory: str, battery_percent: int,
+                                has_box: bool | None = None, minor_scratches: bool | None = None,
+                                was_repaired: bool | None = None, screen_or_body_damage: bool | None = None,
+                                all_functions_work: bool | None = None, sim: str | None = None) -> dict:
         if "samsung" in model.lower() or "galaxy" in model.lower():
             return {"status": "not_accepted", "note": "Samsung в Trade-in не принимается."}
         items = self.catalog.tradein_lookup(model, memory, sim)
@@ -249,13 +251,33 @@ class ToolExecutor:
             return {"status": "not_found",
                     "note": "Этой модели/памяти нет в таблице выкупа — предложи оценку у менеджера.",
                     "available_for_model": options or None}
+        sim_assumed = False
         if len(items) > 1:
-            return {"status": "need_sim", "note": "Цена выкупа зависит от типа SIM — уточни у клиента.",
-                    "options": [t.to_tool() for t in items]}
+            # SIM не спрашиваем: берём вариант с меньшей ценой выкупа (осторожная оценка)
+            priced = [t for t in items if t.max_price is not None]
+            if not priced:
+                return {"status": "manager_review", "note": "Цена выкупа не указана в таблице — нужна оценка менеджера."}
+            items = [min(priced, key=lambda t: t.max_price)]
+            sim_assumed = True
         item = items[0]
         if item.max_price is None:
             return {"status": "manager_review", "note": "Цена выкупа не указана в таблице — нужна оценка менеджера."}
 
+        # Не указанное клиентом считаем лучшим случаем и прямо оговариваем это в ответе
+        assumed = []
+        if has_box is None:
+            has_box = True
+            assumed.append("есть коробка")
+        if minor_scratches is None and screen_or_body_damage is None:
+            assumed.append("нет царапин и повреждений")
+        minor_scratches = bool(minor_scratches)
+        screen_or_body_damage = bool(screen_or_body_damage)
+        if was_repaired is None:
+            was_repaired = False
+            assumed.append("телефон не ремонтировался")
+        if all_functions_work is None:
+            all_functions_work = True
+            assumed.append("всё работает исправно")
         cond = Condition(battery_percent, has_box, minor_scratches, was_repaired,
                          screen_or_body_damage, all_functions_work)
         result = quote(item.max_price, cond)
@@ -263,6 +285,7 @@ class ToolExecutor:
         saved = {
             "device": device,
             "condition": cond.__dict__,
+            "assumed": assumed,
             "quoted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             **result,
         }
@@ -275,6 +298,14 @@ class ToolExecutor:
                             "Называй клиенту только итоговую сумму, без вычетов и их причин."})
         if result["status"] == "ok":
             out["estimate_text"] = format_price(result["estimate"])
+            if assumed:
+                out["assumed_condition"] = assumed
+                out["say_to_client"] = ("Обязательно скажи, что это цена при условии: " + ", ".join(assumed) + ". "
+                                        "Если что-то не так, сумма может быть ниже — пусть клиент напишет, "
+                                        "и ты пересчитаешь. Отдельно об этом не расспрашивай.")
+            if sim_assumed:
+                out["sim_note"] = ("Тип SIM не указан — взята меньшая цена из вариантов. Не спрашивай SIM; "
+                                   "если клиент сам уточнит SIM, пересчитай.")
         return out
 
     def _t_calculate_tradein_topup(self, new_model: str, new_memory: str, new_sim: str | None = None,
