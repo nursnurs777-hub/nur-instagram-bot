@@ -63,7 +63,7 @@ TOOL_DEFINITIONS: list[dict] = [
                 "model": {"type": "string", "description": "Например «iPhone 15 Pro»"},
                 "memory": {"type": "string", "description": "«128GB», «256GB», «1TB»"},
                 "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"],
-                        "description": "Только если клиент сам указал. Не спрашивай: без SIM берётся меньшая цена"},
+                        "description": "Только если клиент сам указал. Не спрашивай: без SIM инструмент вернёт цену для каждого варианта"},
                 "battery_percent": {"type": "integer", "minimum": 0, "maximum": 100},
                 "has_box": {"type": "boolean"},
                 "minor_scratches": {"type": "boolean"},
@@ -251,14 +251,15 @@ class ToolExecutor:
             return {"status": "not_found",
                     "note": "Этой модели/памяти нет в таблице выкупа — предложи оценку у менеджера.",
                     "available_for_model": options or None}
-        sim_assumed = False
+        # SIM не спрашиваем: если цена выкупа зависит от SIM, оцениваем все варианты сразу
+        sim_variants = []
         if len(items) > 1:
-            # SIM не спрашиваем: берём вариант с меньшей ценой выкупа (осторожная оценка)
             priced = [t for t in items if t.max_price is not None]
             if not priced:
                 return {"status": "manager_review", "note": "Цена выкупа не указана в таблице — нужна оценка менеджера."}
-            items = [min(priced, key=lambda t: t.max_price)]
-            sim_assumed = True
+            priced.sort(key=lambda t: t.max_price)
+            sim_variants = priced
+            items = [priced[0]]  # меньшая цена — основная (для доплаты по умолчанию)
         item = items[0]
         if item.max_price is None:
             return {"status": "manager_review", "note": "Цена выкупа не указана в таблице — нужна оценка менеджера."}
@@ -281,7 +282,12 @@ class ToolExecutor:
         cond = Condition(battery_percent, has_box, minor_scratches, was_repaired,
                          screen_or_body_damage, all_functions_work)
         result = quote(item.max_price, cond)
-        device = {"model": item.model, "memory": item.memory, "sim": SIM_LABELS.get(item.sim or "")}
+        device = {"model": item.model, "memory": item.memory,
+                  "sim": None if sim_variants else SIM_LABELS.get(item.sim or "")}
+        variants = []
+        if result["status"] == "ok":
+            for t in sim_variants:
+                variants.append({"sim": SIM_LABELS.get(t.sim or "", t.sim), "estimate": quote(t.max_price, cond)["estimate"]})
         saved = {
             "device": device,
             "condition": cond.__dict__,
@@ -289,6 +295,8 @@ class ToolExecutor:
             "quoted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             **result,
         }
+        if variants:
+            saved["variants"] = variants
         self.state["tradein"] = saved
         self.state.pop("last_topup", None)
         # Базовую цену и вычеты модели не показываем: клиенту называем только итоговую сумму.
@@ -303,9 +311,12 @@ class ToolExecutor:
                 out["say_to_client"] = ("Обязательно скажи, что это цена при условии: " + ", ".join(assumed) + ". "
                                         "Если что-то не так, сумма может быть ниже — пусть клиент напишет, "
                                         "и ты пересчитаешь. Отдельно об этом не расспрашивай.")
-            if sim_assumed:
-                out["sim_note"] = ("Тип SIM не указан — взята меньшая цена из вариантов. Не спрашивай SIM; "
-                                   "если клиент сам уточнит SIM, пересчитай.")
+            if variants:
+                out["by_sim"] = [{"sim": v["sim"], "estimate_text": format_price(v["estimate"])} for v in variants]
+                out.pop("estimate", None)
+                out.pop("estimate_text", None)
+                out["sim_note"] = ("Цена выкупа зависит от типа SIM. Не спрашивай SIM — назови клиенту обе суммы "
+                                   "из by_sim одним сообщением. Если клиент сам уточнит SIM, пересчитай с sim.")
         return out
 
     def _t_calculate_tradein_topup(self, new_model: str, new_memory: str, new_sim: str | None = None,
@@ -344,7 +355,17 @@ class ToolExecutor:
             "topup_text": format_price(calc["topup"]),
             "note": "Доплата предварительная: оценка старого телефона подтверждается после осмотра.",
         }
-        self.state["last_topup"] = {k: result[k] for k in ("new_device", "new_price", "tradein_estimate", "topup")}
+        if saved.get("variants"):
+            result["by_old_sim"] = [
+                {"old_sim": v["sim"], "tradein_estimate_text": format_price(v["estimate"]),
+                 "topup_text": format_price(topup(new.price, v["estimate"])["topup"])}
+                for v in saved["variants"]]
+            result["note"] += (" SIM старого телефона неизвестна — назови доплату для обоих вариантов из by_old_sim, "
+                               "не спрашивая SIM.")
+            for k in ("tradein_estimate", "tradein_estimate_text", "topup", "topup_text"):
+                result.pop(k, None)
+        self.state["last_topup"] = {"new_device": new.label(), "new_price": new.price,
+                                    "tradein_estimate": saved["estimate"], "topup": calc["topup"]}
         return result
 
 
@@ -397,7 +418,11 @@ def state_summary(state: dict) -> str:
         c = t.get("condition", {})
         cond = (f"аккумулятор {c.get('battery_percent')}%, коробка: {'есть' if c.get('has_box') else 'нет'}, "
                 f"царапины: {'да' if c.get('minor_scratches') else 'нет'}, ремонт: {'был' if c.get('was_repaired') else 'не было'}")
-        if t.get("status") == "ok":
+        if t.get("status") == "ok" and t.get("variants"):
+            by = "; ".join(f"{v['sim']} — {format_price(v['estimate'])}" for v in t["variants"])
+            lines.append(f"Сохранённая оценка Trade-in (старый телефон клиента): {name}, SIM не уточнена; {cond}; "
+                         f"предварительно: {by}.")
+        elif t.get("status") == "ok":
             lines.append(f"Сохранённая оценка Trade-in (старый телефон клиента): {name}; {cond}; "
                          f"предварительно {format_price(t['estimate'])}.")
         else:

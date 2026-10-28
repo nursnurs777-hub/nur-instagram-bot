@@ -144,14 +144,22 @@ def test_tradein_manager_review(catalog, kw):
     assert "error" in r2
 
 
-def test_tradein_17_without_sim_takes_lower_price(catalog):
-    ex = ToolExecutor(catalog, {})
-    r, _ = run(ex, "quote_iphone_tradein", model="iPhone 17 Pro", memory="256", battery_percent=100,
-               has_box=True, minor_scratches=False, was_repaired=False, screen_or_body_damage=False,
-               all_functions_work=True)
-    assert r["status"] == "ok" and "sim_note" in r
-    prices = [t.max_price for t in catalog.tradein_lookup("iPhone 17 Pro", "256")]
-    assert len(prices) > 1 and r["estimate"] == min(prices)
+def test_tradein_17_without_sim_gives_both_prices(catalog):
+    state = {}
+    ex = ToolExecutor(catalog, state)
+    r, _ = run(ex, "quote_iphone_tradein", model="iPhone 17 Pro", memory="256", battery_percent=100)
+    assert r["status"] == "ok" and "estimate_text" not in r
+    prices = sorted(t.max_price for t in catalog.tradein_lookup("iPhone 17 Pro", "256"))
+    assert len(r["by_sim"]) == len(prices) > 1
+    assert [v["estimate"] for v in state["tradein"]["variants"]] == prices
+    assert "SIM не уточнена" in state_summary(state)
+    # доплата — тоже для обоих вариантов
+    r2, _ = run(ex, "calculate_tradein_topup", new_model="iPhone 18 Pro Max", new_memory="256", new_sim="sim+esim")
+    assert len(r2["by_old_sim"]) == len(prices) and "topup" not in r2
+    assert state["last_topup"]["tradein_estimate"] == prices[0]
+    # клиент уточнил SIM — одна цена
+    r3, _ = run(ex, "quote_iphone_tradein", model="iPhone 17 Pro", memory="256", battery_percent=100, sim="esim")
+    assert "by_sim" not in r3 and r3["estimate_text"]
 
 
 def test_tradein_samsung_rejected(catalog):
