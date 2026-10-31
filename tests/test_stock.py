@@ -79,7 +79,7 @@ def test_check_new_in_stock_last_one_alternatives_and_missing():
     assert "Вам важен именно" in r["note"]
     # «17 Pro» не путается с «17 Pro Max»
     r = run(s.check_new("iPhone 17 Pro", "256"))
-    assert [v["model"] for v in r["variants"]] == ["iPhone 17 Pro eSIM"]
+    assert [(v["model"], v["sim"]) for v in r["variants"]] == [("iPhone 17 Pro", "только eSIM")]
     r = run(s.check_new("iPhone 18 Pro"))
     assert r["status"] == "out_of_stock" and "WhatsApp" in r["note"]
     # цены новых из SFON не отдаются — только из прайса
