@@ -17,6 +17,7 @@ from .db import Store
 from .instagram import InstagramClient, parse_events, verify_signature
 from .processor import BranchRuntime, Processor
 from .sheets import CatalogProvider
+from .stock import StockService
 from .testchat import router as testchat_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
     claude = AsyncAnthropic(api_key=settings.anthropic_api_key)
     providers: dict[str, CatalogProvider] = {}  # одна загрузка на таблицу, даже если она общая у филиалов
     runtimes = []
+    stocks: list[StockService] = []
     # филиалы с заполненным адресом называем клиентам, даже если бот в их Instagram ещё не подключён
     listed = [b for b in branches if b.primary or b.address]
     for b in branches:
@@ -47,8 +49,11 @@ async def lifespan(app: FastAPI):
             if sid != settings.spreadsheet_id:
                 over["sheet_gids"] = b.sheet_gids  # у чужой таблицы свои номера листов
             providers[sid] = CatalogProvider(replace(settings, **over))
+        stock = StockService.from_env(b.key, b.whatsapp or b.phone)  # у каждого филиала свой ключ SFON
+        if stock:
+            stocks.append(stock)
         runtimes.append(BranchRuntime(b, InstagramClient(b.access_token, settings.graph_api_version),
-                                      SalesAgent(settings, claude, b, listed), providers[sid]))
+                                      SalesAgent(settings, claude, b, listed, stock=stock), providers[sid]))
     primary = runtimes[0]
     proc = Processor(settings, store, primary.ig, primary.agent, primary.catalogs, runtimes)
     app.state.store, app.state.catalogs, app.state.proc = store, primary.catalogs, proc
@@ -59,9 +64,15 @@ async def lifespan(app: FastAPI):
             await prov.get()
         except Exception:
             log.exception("Каталог не загрузился при старте — повторим при первом сообщении")
+    log.info("Наличие SFON: %s", ", ".join(s.branch_key for s in stocks) or "не подключено")
+    reports = [asyncio.create_task(s.startup_report()) for s in stocks]  # не задерживаем запуск
     sched = asyncio.create_task(proc.scheduler())
     yield
     sched.cancel()
+    for t in reports:
+        t.cancel()
+    for s in stocks:
+        await s.aclose()
     for rt in runtimes:
         await rt.ig.aclose()
 

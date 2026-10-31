@@ -13,7 +13,7 @@ from anthropic import AsyncAnthropic
 from .catalog import Catalog
 from .branches import Branch, branches_note, primary_from_settings
 from .config import Settings
-from .tools import TOOL_DEFINITIONS, ToolExecutor, state_summary
+from .tools import STOCK_TOOL_DEFINITIONS, TOOL_DEFINITIONS, ToolExecutor, state_summary
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +85,24 @@ class AgentResult:
     text: str
     state: dict
     tool_calls: list[str] = field(default_factory=list)
+    media: list[dict] = field(default_factory=list)  # [{"label", "urls", "product_id"}] — фото после текста
+
+
+STOCK_RULES = """
+## НАЛИЧИЕ ПО УЧЁТНОЙ СИСТЕМЕ (для этого филиала; приоритет над разделами 8 и 12)
+
+Подключён склад магазина: check_stock (новые) и search_used (б/у). Данные достоверны, отставание — секунды.
+- Говорить «есть в наличии» можно только после check_stock / search_used. Не придумывай остатки.
+- SIM / eSIM указаны прямо в названии товара на складе — не путай версии.
+- Новой модели нет вообще → сразу направь в WhatsApp ({whatsapp}) уточнить наличие и поступление.
+- Нет нужной памяти/цвета, но модель есть в других вариантах → предложи 1–2 ближайших и спроси: «Вам важен именно этот цвет/объём памяти?». Если нужен только его вариант → WhatsApp: менеджер может подобрать модель со склада.
+- Осталась последняя штука (last_one) → скажи об этом и попроси перед приездом забронировать у менеджера в WhatsApp ({whatsapp}). Сколько именно штук на складе, если их несколько, не называй.
+- Цена НОВОГО — только из прайса (get_exact_price). Цена Б/У — из search_used (цена конкретного экземпляра).
+- Новый запечатанный iPhone 13–16 Pro/Pro Max → «снят с производства» (если это правило есть выше). Если клиент спрашивает именно б/у — покажи то, что есть в search_used.
+- Б/у: называй модель, память, цвет, аккумулятор, год, цену. Состояние (царапины, сколы, ремонт) — ТОЛЬКО из описания (description); сам не придумывай и не оценивай по догадке. Если по описанию не ясно — «точное состояние подскажет менеджер» и WhatsApp.
+- Фото б/у: если у экземпляра есть фото — предложи «Скинуть фото?». После согласия вызови send_used_photos. Фото нет → предложи посмотреть у менеджера в WhatsApp.
+- Бронь и оформление — у менеджера в WhatsApp; не говори, что товар отложен.
+"""
 
 
 NO_WHATSAPP = ("(WhatsApp менеджера пока не указан — для брони, наличия и оформления предложи клиенту "
@@ -166,8 +184,9 @@ def build_messages(history: list[dict], images: list[IncomingImage] | None = Non
 
 class SalesAgent:
     def __init__(self, settings: Settings, client: AsyncAnthropic | None = None, branch: Branch | None = None,
-                 branches: list[Branch] | None = None):
+                 branches: list[Branch] | None = None, stock=None):
         self.s = settings
+        self.stock = stock  # StockService (SFON) этого филиала или None
         self.client = client or AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.branch = branch or primary_from_settings(settings)
         self.branches = branches
@@ -179,6 +198,8 @@ class SalesAgent:
 
     def _tools(self) -> list[dict]:
         tools = list(TOOL_DEFINITIONS)
+        if self.stock is not None:
+            tools += STOCK_TOOL_DEFINITIONS
         if self.s.web_search_enabled:
             tools.append({"type": self.s.web_search_tool_type, "name": "web_search",
                           "max_uses": 3, "allowed_domains": self.s.web_search_domains})
@@ -193,6 +214,8 @@ class SalesAgent:
               if self.s.web_search_enabled else
               "- Поиска по сайту Apple нет: если не уверен в характеристике, честно скажи об этом.")
         runtime = RUNTIME_RULES.format(web_search_line=ws)
+        if self.stock is not None:
+            runtime += STOCK_RULES.format(whatsapp=self.branch.whatsapp or self.branch.phone or "WhatsApp менеджера")
         ctx = [f"Сейчас: {WEEKDAYS_RU[now.weekday()]}, {now:%d.%m.%Y %H:%M} ({self.branch.city}). "
                f"Магазин сейчас {'открыт' if is_open else 'закрыт'}."]
         summary = state_summary(state)
@@ -211,7 +234,8 @@ class SalesAgent:
                     extra_user_note: str | None = None) -> AgentResult:
         state = dict(state)
         executor = ToolExecutor(catalog, state, self.s.kaspi_markup_percent, self.s.kaspi_months,
-                                discontinued_rule=getattr(self.branch, "discontinued_rule", True))
+                                discontinued_rule=getattr(self.branch, "discontinued_rule", True),
+                                stock=self.stock)
         messages = build_messages(history, images, extra_user_note)
         if not messages:
             return AgentResult("", state)
@@ -229,14 +253,14 @@ class SalesAgent:
                 continue
             if resp.stop_reason != "tool_use":
                 text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-                return AgentResult(strip_markdown(text), state, called)
+                return AgentResult(strip_markdown(text), state, called, executor.media)
 
             results = []
             for block in resp.content:
                 if getattr(block, "type", "") != "tool_use":
                     continue
                 called.append(block.name)
-                output, is_error = executor.run(block.name, dict(block.input or {}))
+                output, is_error = await executor.arun(block.name, dict(block.input or {}))
                 log.info("[%s] tool %s(%s) -> %s", self.branch.key, block.name, block.input, output[:300])
                 results.append({"type": "tool_result", "tool_use_id": block.id,
                                 "content": output, "is_error": is_error})

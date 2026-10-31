@@ -118,6 +118,12 @@ class InstagramClient:
                 mids.append(data["message_id"])
         return mids
 
+    async def send_image(self, user_id: str, url: str) -> str | None:
+        """Отправляет картинку по публичной ссылке; возвращает message_id."""
+        data = await self._post({"recipient": {"id": user_id},
+                                 "message": {"attachment": {"type": "image", "payload": {"url": url}}}})
+        return data.get("message_id")
+
     async def me(self) -> dict:
         """Кто владелец маркера: {'user_id': ID аккаунта в вебхуках, 'id': ..., 'username': ...}."""
         if not self.token:

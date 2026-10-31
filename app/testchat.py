@@ -112,12 +112,15 @@ async def message(request: Request, session: str = Form(...), text: str = Form("
 
     if result.text:
         await asyncio.to_thread(store.add_message, uid, "assistant", result.text)
+    for m in result.media or []:
+        await asyncio.to_thread(store.add_message, uid, "assistant", f"[бот отправил клиенту фото: {m.get('label', '')}]")
     await asyncio.to_thread(store.update_conv, uid, state=result.state)
     return {
         "reply": result.text,
         "tools": result.tool_calls,
         "photo_notes": notes,
         "card": state_summary(result.state),
+        "media": [{"label": m.get("label"), "urls": m.get("urls", [])} for m in (result.media or [])],
     }
 
 

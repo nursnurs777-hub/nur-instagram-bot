@@ -214,6 +214,7 @@ $('#f').onsubmit = async e => {
       const secs = ((performance.now() - started)/1000).toFixed(1);
       const tags = (r.tools||[]).map(x => `<span class="tag">${esc(x)}</span>`).join('');
       bubble('bot', r.reply, {meta: `${secs} с ${tags}`});
+      (r.media || []).forEach(m => bubble('bot', '📷 ' + (m.label || 'фото'), {thumbs: m.urls}));
     } else if (!asMgr) sys('Бот ничего не ответил', 'err');
     showCard(r.card);
   } catch(err){ if (typing) typing.remove(); sys(err.message, 'err'); }

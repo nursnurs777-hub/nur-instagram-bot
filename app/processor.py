@@ -284,9 +284,11 @@ class Processor:
                                                 extra_system=extra_system, extra_user_note=extra_note)
                 text = result.text
                 new_state = result.state
+                media = getattr(result, "media", None) or []
             except Exception:
                 log.exception("Ошибка генерации ответа для %s", user_id)
                 text, new_state = ("" if followup else fallback_text(rt.branch)), conv["state"]
+                media = []
 
             if not text:
                 await self._db(self.store.mark_processed, [m["id"] for m in pending])
@@ -312,11 +314,27 @@ class Processor:
             now = utcnow()
             for i, mid in enumerate(mids or [None]):
                 await self._db(self.store.add_message, user_id, "assistant", text if i == 0 else "", mid, True, now)
+            await self._send_media(rt, igsid, user_id, media)
             await self._db(self.store.mark_processed, [m["id"] for m in pending])
             fields = {"state": new_state, "last_bot_at": now}
             if followup:
                 fields["followup_sent"] = True
             await self._db(self.store.update_conv, user_id, **fields)
+
+    async def _send_media(self, rt: BranchRuntime, igsid: str, key: str, media: list[dict]) -> None:
+        """Фото б/у после текста. message_id сохраняем, чтобы echo не приняли за ответ менеджера."""
+        for m in media:
+            sent = 0
+            for url in m.get("urls", [])[:4]:
+                try:
+                    mid = await rt.ig.send_image(igsid, url)
+                except Exception as e:
+                    log.warning("[%s] Не удалось отправить фото %s: %s", rt.branch.key, url, e)
+                    continue
+                note = f"[бот отправил клиенту фото: {m.get('label', '')}]" if sent == 0 else ""
+                await self._db(self.store.add_message, key, "assistant", note, mid, True)
+                sent += 1
+            log.info("[%s] Отправлено фото %s/%s: %s", rt.branch.key, sent, len(m.get("urls", [])), m.get("label"))
 
     # ------------------------------------------------------------------ фото
     async def _prepare_images(self, user_id: str) -> list[IncomingImage]:

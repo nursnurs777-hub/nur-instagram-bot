@@ -88,8 +88,10 @@ TOOL_DEFINITIONS: list[dict] = [
                 "new_memory": {"type": "string"},
                 "new_sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"]},
                 "new_color": {"type": "string", "description": "Цвет, если цена в прайсе зависит от цвета"},
+                "used_product_id": {"type": "integer",
+                                    "description": "Если клиент берёт Б/У телефон из наличия: product_id из search_used"},
             },
-            "required": ["new_model", "new_memory"],
+            "required": [],
         },
     },
     {
@@ -103,7 +105,8 @@ TOOL_DEFINITIONS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "basis": {"type": "string", "enum": ["product", "tradein_topup"]},
+                "basis": {"type": "string", "enum": ["product", "tradein_topup", "used"]},
+                "product_id": {"type": "integer", "description": "Для basis='used': product_id б/у из search_used"},
                 "model": {"type": "string"},
                 "memory": {"type": "string"},
                 "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"]},
@@ -111,6 +114,58 @@ TOOL_DEFINITIONS: list[dict] = [
                 "months": {"type": "integer", "description": "По умолчанию 24"},
             },
             "required": ["basis"],
+        },
+    },
+]
+
+
+STOCK_TOOL_DEFINITIONS: list[dict] = [
+    {
+        "name": "check_stock",
+        "description": (
+            "Наличие НОВОГО (запечатанного) товара на складе этого филиала по учётной системе. Вызывай, когда клиент "
+            "спрашивает «есть?», хочет приехать или купить, и перед тем как сказать «есть в наличии». "
+            "Возвращает: in_stock, варианты с количеством, last_one (последняя штука) или ближайшие альтернативы. "
+            "Цены новых — НЕ отсюда, а из прайса (get_exact_price)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Модель, например «iPhone 17 Pro Max»"},
+                "memory": {"type": "string"},
+                "color": {"type": "string"},
+                "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"]},
+            },
+            "required": ["model"],
+        },
+    },
+    {
+        "name": "search_used",
+        "description": (
+            "Б/у устройства в наличии этого филиала: каждый экземпляр со своей ценой, аккумулятором, годом, "
+            "описанием и количеством фото. Вызывай, когда клиент спрашивает б/у / бывший в употреблении телефон. "
+            "Цена б/у — отсюда."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Модель; можно не указывать, чтобы увидеть всё"},
+                "memory": {"type": "string"},
+                "battery_from": {"type": "integer", "description": "Минимальный процент аккумулятора"},
+                "max_price": {"type": "number", "description": "Бюджет клиента, ₸"},
+            },
+        },
+    },
+    {
+        "name": "send_used_photos",
+        "description": (
+            "Отправить клиенту в Direct фото конкретного б/у экземпляра (до 4). Вызывай ТОЛЬКО после того, как "
+            "клиент согласился посмотреть фото. Фото уйдут сразу после твоего текстового ответа."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "integer", "description": "product_id из search_used"}},
+            "required": ["product_id"],
         },
     },
 ]
@@ -180,6 +235,7 @@ def _discontinued_result(label: str) -> dict:
                             "Хотите, подберу вам более новую модель iPhone?"),
         "note": ("Ответь клиенту этим текстом. Не говори про восстановленные телефоны, если клиент сам не спросил, "
                  "не отправляй ссылки. Новые модели предлагай только из прайса (search_products). "
+                 "Если клиент сам спрашивает именно Б/У и доступен search_used — покажи б/у из наличия. "
                  "Если клиент хочет СДАТЬ эту модель — оценивай по Trade-in как обычно."),
     }
 
@@ -188,8 +244,10 @@ class ToolExecutor:
     """Выполняет вызовы инструментов. `state` — изменяемый словарь карточки диалога (сохраняется в БД)."""
 
     def __init__(self, catalog: Catalog, state: dict, kaspi_markup_percent: float = 20, kaspi_months: int = 24,
-                 discontinued_rule: bool = True):
+                 discontinued_rule: bool = True, stock=None):
         self.discontinued_rule = discontinued_rule
+        self.stock = stock          # StockService филиала или None
+        self.media: list[dict] = []  # фото, которые надо отправить клиенту после текста
         self.catalog = catalog
         self.state = state
         self.kaspi_markup = kaspi_markup_percent
@@ -208,6 +266,96 @@ class ToolExecutor:
         except Exception as e:  # не роняем диалог из-за одного инструмента
             log.exception("Ошибка инструмента %s", name)
             return _dump({"error": f"Инструмент временно недоступен: {e.__class__.__name__}"}), True
+
+    async def arun(self, name: str, args: dict) -> tuple[str, bool]:
+        """Как run, но умеет инструменты, которым нужна сеть (наличие SFON)."""
+        handler = getattr(self, f"_a_{name}", None)
+        if handler is None:
+            return self.run(name, args)
+        try:
+            return _dump(await handler(**args)), False
+        except TypeError as e:
+            return _dump({"error": f"Неверные параметры: {e}"}), True
+        except Exception as e:
+            log.exception("Ошибка инструмента %s", name)
+            return _dump({"error": f"Инструмент временно недоступен: {e.__class__.__name__}"}), True
+
+    # ------------------------------------------------------------------ наличие (SFON)
+    def _no_stock(self) -> dict:
+        return {"error": "Проверка наличия для этого филиала не подключена — наличие уточняет менеджер."}
+
+    async def _a_check_stock(self, model: str, memory: str | None = None, color: str | None = None,
+                             sim: str | None = None) -> dict:
+        if not self.stock:
+            return self._no_stock()
+        if self.discontinued_rule and (label := discontinued_iphone(model)):
+            return _discontinued_result(label)
+        return await self.stock.check_new(model, memory, color, sim)
+
+    async def _a_search_used(self, model: str | None = None, memory: str | None = None,
+                             battery_from: int | None = None, max_price: float | None = None) -> dict:
+        if not self.stock:
+            return self._no_stock()
+        return await self.stock.search_used(model, memory, battery_from, max_price)
+
+    async def _a_send_used_photos(self, product_id: int) -> dict:
+        if not self.stock:
+            return self._no_stock()
+        unit = await self.stock.used_unit(int(product_id))
+        if unit is None:
+            return {"error": "Экземпляр не найден (возможно, уже продан). Предложи другой или менеджера."}
+        if not unit.photos:
+            return {"status": "no_photos",
+                    "note": f"У этого экземпляра нет фото в базе. Предложи посмотреть фото у менеджера в WhatsApp: "
+                            f"{self.stock.whatsapp or 'WhatsApp менеджера'}"}
+        urls = unit.photos[:4]
+        if any(m.get("product_id") == unit.product_id for m in self.media):
+            return {"status": "already_queued", "photos": len(urls)}
+        self.media.append({"product_id": unit.product_id, "label": unit.label(), "urls": urls})
+        return {"status": "queued", "photos": len(urls),
+                "note": ("Фото отправятся сразу после твоего сообщения. Напиши коротко, что отправляешь фото. "
+                         "Не описывай состояние, которого нет в description; если клиент спросит про царапины, а по "
+                         "описанию это не ясно — направь к менеджеру.")}
+
+    async def _used_price(self, product_id) -> tuple[object, dict | None]:
+        if not self.stock:
+            return None, self._no_stock()
+        unit = await self.stock.used_unit(int(product_id))
+        if unit is None:
+            return None, {"error": "Б/у экземпляр не найден — возможно, уже продан."}
+        if unit.price is None:
+            return None, {"error": "У этого б/у не указана цена — предложи уточнить у менеджера."}
+        return unit, None
+
+    async def _a_calculate_kaspi_installment(self, basis: str, product_id: int | None = None, **kw) -> dict:
+        if basis != "used":
+            return self._t_calculate_kaspi_installment(basis, **kw)
+        if not product_id:
+            return {"error": "Для б/у укажи product_id из search_used."}
+        unit, err = await self._used_price(product_id)
+        if err:
+            return err
+        months = kw.get("months") or self.kaspi_months
+        if months != self.kaspi_months:
+            return {"error": f"Наценка известна только для рассрочки на {self.kaspi_months} мес."}
+        calc = installment(int(unit.price), self.kaspi_markup, months)
+        return {"product": unit.label() + " (б/у)", **calc, **self._inst_text(calc),
+                "note": "Цена б/у — за наличные; в рассрочку дороже на наценку. Одобрение — за Kaspi."}
+
+    async def _a_calculate_tradein_topup(self, used_product_id: int | None = None, **kw) -> dict:
+        if not used_product_id:
+            if not kw.get("new_model") or not kw.get("new_memory"):
+                return {"error": "Укажи модель и память нового телефона (или used_product_id для б/у)."}
+            return self._t_calculate_tradein_topup(**kw)
+        saved = self.state.get("tradein")
+        if not saved:
+            return {"error": "Нет сохранённой оценки старого телефона — сначала quote_iphone_tradein."}
+        if saved.get("status") != "ok":
+            return {"error": "Старый телефон требует индивидуальной оценки менеджером — доплату не считаем."}
+        unit, err = await self._used_price(used_product_id)
+        if err:
+            return err
+        return self._topup_for(unit.label() + " (б/у)", int(unit.price), saved)
 
     # ------------------------------------------------------------------ розница
     def _t_search_products(self, query: str) -> dict:
@@ -345,12 +493,16 @@ class ToolExecutor:
         new = items[0]
         if new.price is None:
             return {"error": "Цена нового телефона в прайсе не указана — доплату не называй, предложи уточнить у менеджера."}
-        calc = topup(new.price, saved["estimate"])
+        return self._topup_for(new.label(), new.price, saved)
+
+
+    def _topup_for(self, label: str, price: int, saved: dict) -> dict:
+        calc = topup(price, saved["estimate"])
         result = {
             "old_device": saved["device"],
-            "new_device": new.label(),
+            "new_device": label,
             **calc,
-            "new_price_text": format_price(new.price),
+            "new_price_text": format_price(price),
             "tradein_estimate_text": format_price(saved["estimate"]),
             "topup_text": format_price(calc["topup"]),
             "note": "Доплата предварительная: оценка старого телефона подтверждается после осмотра.",
@@ -358,16 +510,15 @@ class ToolExecutor:
         if saved.get("variants"):
             result["by_old_sim"] = [
                 {"old_sim": v["sim"], "tradein_estimate_text": format_price(v["estimate"]),
-                 "topup_text": format_price(topup(new.price, v["estimate"])["topup"])}
+                 "topup_text": format_price(topup(price, v["estimate"])["topup"])}
                 for v in saved["variants"]]
             result["note"] += (" SIM старого телефона неизвестна — назови доплату для обоих вариантов из by_old_sim, "
                                "не спрашивая SIM.")
             for k in ("tradein_estimate", "tradein_estimate_text", "topup", "topup_text"):
                 result.pop(k, None)
-        self.state["last_topup"] = {"new_device": new.label(), "new_price": new.price,
+        self.state["last_topup"] = {"new_device": label, "new_price": price,
                                     "tradein_estimate": saved["estimate"], "topup": calc["topup"]}
         return result
-
 
     # ------------------------------------------------------------------ рассрочка
     def _t_calculate_kaspi_installment(self, basis: str, model: str | None = None, memory: str | None = None,
