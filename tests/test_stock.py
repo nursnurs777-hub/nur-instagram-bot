@@ -205,3 +205,19 @@ def test_real_sfon_names_and_russian_colors():
     assert r["in_stock"] and r["variants"][0]["last_one"]
     r = run(s.check_new("iPhone 17", "256", "зелёный шалфей"))
     assert r["in_stock"] and r["variants"][0]["model"] == "iPhone 17"
+
+
+def test_missing_variant_goes_to_manager_with_price():
+    ex = ex_with_stock()
+    # 1TB нет на складе — про наличие молчим, цену (если есть) называем, ведём к менеджеру
+    r = json.loads(run(ex.arun("check_stock", {"model": "iPhone 17 Pro Max", "memory": "1TB"}))[0])
+    assert r["status"] == "ask_manager" and "alternatives" not in r and "price_options" not in r
+    assert "не предлагай другие" in r["note"] and "WhatsApp" in r["note"]
+    r = json.loads(run(ex.arun("check_stock", {"model": "iPhone 17 Pro", "memory": "256", "color": "зелёный"}))[0])
+    if r["status"] == "ask_manager":
+        assert r["price_options"][0]["price_kzt"] == 600000
+    # модели нет совсем — тоже без «нет в наличии», с ценой из прайса
+    cat_ex = ex_with_stock()
+    cat_ex.catalog = Catalog({"iphone": [["Модель", "Память", "Цена", "Показать"], ["iPhone 18 Pro", "256GB", "740 000 ₸", "Да"]]})
+    r = json.loads(run(cat_ex.arun("check_stock", {"model": "iPhone 18 Pro", "memory": "256"}))[0])
+    assert r["status"] == "ask_manager" and r["price_options"][0]["price_kzt"] == 740000

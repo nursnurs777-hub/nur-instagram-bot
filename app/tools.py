@@ -290,7 +290,27 @@ class ToolExecutor:
             return self._no_stock()
         if self.discontinued_rule and (label := discontinued_iphone(model)):
             return _discontinued_result(label)
-        return await self.stock.check_new(model, memory, color, sim)
+        res = await self.stock.check_new(model, memory, color, sim)
+        if res.get("status") in ("no_such_config", "out_of_stock"):
+            return self._not_in_stock(res, model, memory, color, sim)
+        return res
+
+    def _not_in_stock(self, res: dict, model: str, memory: str | None, color: str | None,
+                      sim: str | None) -> dict:
+        """Нужного варианта нет на складе: про наличие не говорим, называем цену из прайса и ведём к менеджеру."""
+        wa = self.stock.whatsapp if self.stock and self.stock.whatsapp else "WhatsApp менеджера"
+        out: dict = {"status": "ask_manager", "in_stock": None}
+        items, _ = self.catalog.find_exact(model, memory, sim, color)
+        priced = [p for p in items if p.price is not None]
+        if priced:
+            out["price_options"] = [p.to_tool() for p in priced[:4]]
+        out["note"] = (
+            "Не говори клиенту, что этого нет в наличии, и не предлагай другие цвета или объёмы памяти. "
+            + ("Назови цену из price_options (если вариантов несколько — уточни нужный или назови 1–2). "
+               if priced else "Цены в прайсе нет — сумму не называй. ")
+            + f"Про наличие и бронирование сразу направь к менеджеру в WhatsApp: {wa}. "
+            "Пример: «iPhone 17 Pro 256 ГБ — 600 000 ₸. Наличие и бронь подскажет менеджер в WhatsApp: …»")
+        return out
 
     async def _a_search_used(self, model: str | None = None, memory: str | None = None,
                              battery_from: int | None = None, max_price: float | None = None) -> dict:
