@@ -33,6 +33,31 @@ AUTH_ERRORS = {"API_KEY_MISSING", "API_KEY_INVALID", "API_KEY_DISABLED", "API_KE
 _SIM_WORDS_RX = re.compile(r"(?<![a-z0-9])(?:[12] ?)?(?:e ?sim|sim)(?![a-z])|(?<![a-z])(?:dual|nano|только|only|физ\w*)(?![a-z])")
 
 
+_SIM_ORIG_RX = re.compile(r"\s*\(?\b(?:dual\s*sim|[12]\s*sim|e-?\s?sim|sim)(?:\s*\+\s*e-?sim)?\b\)?", re.I)
+
+# цвета в SFON — по-английски («ORANGE», «SAGE»); клиенты пишут по-русски
+COLOR_RU = {
+    "черн": "black", "чёрн": "black", "бел": "white", "син": "blue", "голуб": "blue", "оранж": "orange",
+    "сереб": "silver", "сер": "gray", "зелен": "green", "зелён": "green", "шалфе": "sage", "роз": "pink",
+    "фиол": "purple", "лаванд": "lavender", "золот": "gold", "натурал": "natural", "пустын": "desert",
+    "титан": "titanium", "красн": "red", "желт": "yellow", "жёлт": "yellow", "бордо": "burgundy", "бургун": "burgundy",
+    "графит": "graphite", "косм": "cosmic", "небесн": "sky", "туман": "mist", "ледян": "glacier",
+}
+
+
+def color_key(c: str | None) -> str:
+    s = norm(c)
+    for ru, en in COLOR_RU.items():
+        s = re.sub(rf"\b{ru}\w*", en, s)
+    return s
+
+
+def pretty_model(name: str | None) -> str:
+    """«17 Pro Max e-Sim» → «iPhone 17 Pro Max»."""
+    s = re.sub(r"\s+", " ", _SIM_ORIG_RX.sub(" ", name or "")).strip()
+    return ("iPhone " + s) if re.match(r"^\d", s) else s
+
+
 def base_model(name: str | None) -> str:
     """«iPhone 17 Pro eSIM» → «iphone 17 pro» (SIM-пометки из названия убираются)."""
     s = _SIM_WORDS_RX.sub(" ", norm(name))
@@ -59,7 +84,7 @@ class StockItem:
     search_text: str = ""
 
     def label(self) -> str:
-        bits = [self.model]
+        bits = [pretty_model(self.model)]
         for x in (self.memory, self.color):
             if x:
                 bits.append(x)
@@ -230,12 +255,14 @@ class StockService:
         if sk:
             items = [i for i in items if i.sim in (sk, None)]
         if color:
-            c = norm(color)
-            items = [i for i in items if i.color and (c in norm(i.color) or norm(i.color) in c)]
+            c = color_key(color)
+            words = set(c.split())
+            items = [i for i in items if i.color and (
+                c in color_key(i.color) or color_key(i.color) in c or words & set(color_key(i.color).split()))]
         return items
 
     def _variant(self, i: StockItem) -> dict:
-        d = {"model": i.model, "memory": i.memory, "color": i.color, "count": i.count}
+        d = {"model": pretty_model(i.model), "memory": i.memory, "color": i.color, "count": i.count}
         if i.sim:
             d["sim"] = SIM_LABELS.get(i.sim, i.sim)
         if i.count == 1:
@@ -291,7 +318,7 @@ class StockService:
         items.sort(key=lambda i: (i.price is None, i.price or 0))
         units = []
         for i in items[:6]:
-            u = {"product_id": i.product_id, "model": i.model, "memory": i.memory, "color": i.color,
+            u = {"product_id": i.product_id, "model": pretty_model(i.model), "memory": i.memory, "color": i.color,
                  "battery_percent": i.battery, "year": i.year, "photos": len(i.photos),
                  "price_kzt": i.price, "price_text": format_price(int(i.price)) if i.price else "цена не указана"}
             if i.sim:

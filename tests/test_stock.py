@@ -182,3 +182,26 @@ def test_processor_sends_photos_after_text(tmp_path):
         assert proc.store.get_conv("U1")["paused_until"] is None
         assert any("отправил клиенту фото" in (m["content"] or "") for m in proc.store.history("U1", 10))
     asyncio.run(go())
+
+
+def test_real_sfon_names_and_russian_colors():
+    rows = [
+        {"modelName": "17 Pro Max e-Sim", "memoryName": "256GB", "colorName": "ORANGE", "count": 3, "state": "NEW"},
+        {"modelName": "17 Pro Max Sim", "memoryName": "256GB", "colorName": "Blue", "count": 2, "state": "NEW"},
+        {"modelName": "17 Pro e-Sim", "memoryName": "256GB", "colorName": "Blue", "count": 1, "state": "NEW"},
+        {"modelName": "17 Sim", "memoryName": "256GB", "colorName": "SAGE", "count": 1, "state": "NEW"},
+    ]
+
+    class F(FakeSfon):
+        async def search(self, flt, page=0, size=100):
+            return {"content": rows if flt["state"] == "NEW" else [], "last": True}
+
+    s = StockService("astana", F(), whatsapp="wa")
+    r = run(s.check_new("iPhone 17 Pro Max", "256", "оранжевый", "esim"))
+    assert r["in_stock"] and r["variants"][0]["model"] == "iPhone 17 Pro Max" and r["variants"][0]["sim"] == "только eSIM"
+    r = run(s.check_new("iPhone 17 Pro Max", "256", "Cosmic Orange", "sim+esim"))
+    assert r["status"] == "no_such_config" and {a["color"] for a in r["alternatives"]} == {"ORANGE", "Blue"}
+    r = run(s.check_new("iPhone 17 Pro", "256", "синий"))
+    assert r["in_stock"] and r["variants"][0]["last_one"]
+    r = run(s.check_new("iPhone 17", "256", "зелёный шалфей"))
+    assert r["in_stock"] and r["variants"][0]["model"] == "iPhone 17"

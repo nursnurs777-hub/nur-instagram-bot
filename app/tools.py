@@ -133,7 +133,7 @@ STOCK_TOOL_DEFINITIONS: list[dict] = [
             "properties": {
                 "model": {"type": "string", "description": "Модель, например «iPhone 17 Pro Max»"},
                 "memory": {"type": "string"},
-                "color": {"type": "string"},
+                "color": {"type": "string", "description": "Цвет, можно по-русски или по-английски"},
                 "sim": {"type": "string", "enum": ["esim", "sim+esim", "dual"]},
             },
             "required": ["model"],
