@@ -134,6 +134,16 @@ class InstagramClient:
             raise RuntimeError(f"Instagram API {r.status_code}: {r.text[:300]}")
         return r.json()
 
+    async def username(self, user_id: str) -> str | None:
+        """Ник собеседника (нужно, чтобы не переписываться со своими же филиалами)."""
+        if not self.token:
+            return None
+        r = await self.http.get(f"{self.base}/{user_id}", params={"fields": "username"},
+                                headers={"Authorization": f"Bearer {self.token}"}, timeout=5)
+        if r.status_code >= 400:
+            return None
+        return (r.json() or {}).get("username")
+
     async def typing(self, user_id: str, on: bool = True) -> None:
         try:
             await self._post({"recipient": {"id": user_id}, "sender_action": "typing_on" if on else "typing_off"})

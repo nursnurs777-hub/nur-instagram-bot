@@ -89,6 +89,10 @@ class Settings:
     # Поведение
     bot_enabled: bool = field(default_factory=lambda: _bool("BOT_ENABLED", True))
     allowed_user_ids: list[str] = field(default_factory=lambda: _list("ALLOWED_USER_IDS"))
+    # кому бот никогда не отвечает (например, аккаунты своих же филиалов)
+    ignore_user_ids: list[str] = field(default_factory=lambda: _list("IGNORE_USER_IDS"))
+    # защита от зацикливания: больше N ответов одному собеседнику за 10 минут → пауза на час
+    loop_guard_replies: int = field(default_factory=lambda: _int("LOOP_GUARD_REPLIES", 10))
     debounce_seconds: float = field(default_factory=lambda: float(_env("DEBOUNCE_SECONDS", "4")))
     history_limit: int = field(default_factory=lambda: _int("HISTORY_LIMIT", 30))
     manager_pause_minutes: int = field(default_factory=lambda: _int("MANAGER_PAUSE_MINUTES", 5))

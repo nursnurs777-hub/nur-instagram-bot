@@ -95,6 +95,8 @@ class Processor:
         self.runtimes: dict[str, BranchRuntime] = {rt.branch.key: rt for rt in runtimes}
         self.primary = next((rt for rt in runtimes if rt.branch.primary), runtimes[0])
         self._unknown_accounts: set[str] = set()
+        self._own_accounts: dict[str, bool] = {}  # key -> собеседник это наш же филиал
+        self._reply_times: dict[str, list] = {}
         self._debounce: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         # фото ждут обработки: (id сообщения в БД, ссылка Instagram). Ссылки живут только в памяти.
@@ -173,12 +175,44 @@ class Processor:
         rt = await self.runtime_for_account(ev.account_id)
         if ev.user_id in rt.account_ids or (self.s.ig_account_id and ev.user_id == self.s.ig_account_id):
             return
+        if ev.user_id in self.s.ignore_user_ids:
+            return
         key = rt.branch.conv_key(ev.user_id)
+        if await self._is_own_account(rt, ev.user_id, key):
+            return
         log.info("[%s] %s от %s", rt.branch.key, "ответ с аккаунта" if ev.kind == "echo" else "сообщение", ev.user_id)
         if ev.kind == "echo":
             await self._handle_echo(ev, key)
         else:
             await self._handle_incoming(ev, key)
+
+    def _own_handles(self) -> set[str]:
+        return {(r.branch.instagram or "").lstrip("@").lower() for r in self.runtimes.values()} - {""}
+
+    async def _is_own_account(self, rt: "BranchRuntime", user_id: str, key: str) -> bool:
+        """Собеседник — Instagram другого нашего филиала? Тогда молчим, иначе боты зациклятся."""
+        if key in self._own_accounts:
+            return self._own_accounts[key]
+        fn = getattr(rt.ig, "username", None)
+        name = None
+        if fn is not None:
+            try:
+                name = await asyncio.wait_for(fn(user_id), 6)
+            except Exception:
+                name = None
+        own = bool(name) and name.lower() in self._own_handles()
+        if name is not None or own:
+            self._own_accounts[key] = own
+        if own:
+            log.warning("[%s] %s — это наш же аккаунт @%s, не отвечаем", rt.branch.key, user_id, name)
+        return own
+
+    def _loop_guard(self, key: str) -> bool:
+        """True, если боту пора остановиться: слишком много ответов одному собеседнику за 10 минут."""
+        now = utcnow()
+        times = [t for t in self._reply_times.get(key, []) if (now - t).total_seconds() < 600]
+        self._reply_times[key] = times
+        return len(times) >= self.s.loop_guard_replies
 
     async def _handle_incoming(self, ev: Event, key: str | None = None) -> None:
         key = key or ev.user_id
@@ -277,6 +311,13 @@ class Processor:
                                 "можно коротко поздороваться. Без ссылок и давления.")
                 extra_note = "[служебное событие: клиент не ответил на вопрос, это единственное напоминание]"
 
+            if self._loop_guard(user_id):
+                log.warning("Зацикливание с %s: %d ответов за 10 мин — пауза на час", user_id,
+                            len(self._reply_times[user_id]))
+                await self._db(self.store.update_conv, user_id, paused_until=utcnow() + timedelta(hours=1))
+                await self._db(self.store.mark_processed, [m["id"] for m in pending])
+                return
+
             await rt.ig.typing(igsid, True)
             try:
                 catalog = await rt.catalogs.get()
@@ -312,6 +353,7 @@ class Processor:
                 log.exception("Не удалось отправить сообщение %s", user_id)
                 return
             now = utcnow()
+            self._reply_times.setdefault(user_id, []).append(now)
             for i, mid in enumerate(mids or [None]):
                 await self._db(self.store.add_message, user_id, "assistant", text if i == 0 else "", mid, True, now)
             await self._send_media(rt, igsid, user_id, media)
