@@ -279,10 +279,9 @@ class Processor:
     async def _carry_comment_context(self, mid: str, key: str) -> None:
         """Ответ на комментарий ушёл в директ: у директа может быть свой ID — переносим туда комментарий и ответ."""
         owner = await self._db(self.store.message_owner_by_mid, mid)
-        if owner and owner != key and owner.split(":")[-1] != key.split(":")[-1]:
-            hist = await self._db(self.store.history, key, 1)
-            if not hist:
-                await self._db(self.store.copy_context, owner, key, 2)
+        if owner and owner != key:
+            if await self._db(self.store.copy_comment_context, owner, key, mid):
+                log.info("Контекст комментария перенесён в переписку %s", key)
 
     async def handle_comment(self, ev: "CommentEvent") -> None:
         if not self.s.comments_enabled or not self.s.bot_enabled:

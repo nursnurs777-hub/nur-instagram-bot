@@ -54,3 +54,24 @@ def test_handle_comment_flow(tmp_path):
         assert any("комментарий" in h["content"] for h in hist)
         assert any("iPhone 18 Pro Max" in h["content"] for h in proc.store.history("U9", 5))
     asyncio.run(go())
+
+
+
+def test_comment_context_added_to_existing_dm_without_duplicates(tmp_path):
+    from app.db import Store
+    st = Store(f"sqlite:///{tmp_path}/c.db")
+    # у клиента уже была переписка в директе
+    st.get_conv("IG1")
+    st.add_message("IG1", "user", "здравствуйте, есть 17 про?", "old-1", True)
+    st.add_message("IG1", "assistant", "Да, есть.", "old-2", True)
+    # потом он оставил комментарий, бот ответил в директ (другой ID — из комментария)
+    st.get_conv("C1")
+    st.add_message("C1", "user", "[комментарий под публикацией] Какая цена?", "c:777", True)
+    st.add_message("C1", "assistant", "Здравствуйте! iPhone 18 Pro Max — 800 000 ₸. Какую память смотрите?", "dm-77", True)
+    assert st.copy_comment_context("C1", "IG1", "dm-77") is True
+    h = st.history("IG1", 10)
+    assert [x["role"] for x in h] == ["user", "assistant", "user", "assistant"]
+    assert "Какая цена" in h[2]["content"] and "800 000" in h[3]["content"]
+    # повторное echo ничего не дублирует
+    assert st.copy_comment_context("C1", "IG1", "dm-77") is False
+    assert len(st.history("IG1", 10)) == 4

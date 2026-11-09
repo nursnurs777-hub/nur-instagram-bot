@@ -117,16 +117,31 @@ class Store:
             r = c.execute(select(messages.c.user_id).where(messages.c.mid == mid)).first()
             return r[0] if r else None
 
-    def copy_context(self, src: str, dst: str, limit: int = 4) -> None:
-        """Переносит последние реплики (комментарий + ответ бота) в диалог директа, если у него другой ID."""
-        rows = self.history(src, limit)
-        if not rows:
-            return
+    def copy_comment_context(self, src: str, dst: str, reply_mid: str) -> bool:
+        """Ответ на комментарий ушёл в директ, а у директа клиента другой ID: добавляем в конец его переписки
+        комментарий и ответ бота (даже если там уже есть история), без дублей. True — если что-то добавили."""
+        with self.engine.begin() as c:
+            reply = c.execute(select(messages.c.id, messages.c.content, messages.c.created_at)
+                              .where(messages.c.mid == reply_mid, messages.c.user_id == src)).first()
+            if not reply:
+                return False
+            comment = c.execute(select(messages.c.content, messages.c.created_at)
+                                .where(messages.c.user_id == src, messages.c.id < reply[0],
+                                       messages.c.role == "user", messages.c.mid.like("c:%"))
+                                .order_by(messages.c.id.desc()).limit(1)).first()
+            pair = ([("user", comment[0], comment[1])] if comment else []) + [("assistant", reply[1], reply[2])]
+            recent = {(r[0], r[1]) for r in c.execute(
+                select(messages.c.role, messages.c.content).where(messages.c.user_id == dst)
+                .order_by(messages.c.id.desc()).limit(30)).all()}
+            new = [p for p in pair if (p[0], p[1]) not in recent]
+            if not new:
+                return False
         self.get_conv(dst)
         with self.engine.begin() as c:
-            for r in rows:
-                c.execute(insert(messages).values(user_id=dst, role=r["role"], content=r["content"], mid=None,
-                                                  processed=True, created_at=r["created_at"]))
+            for role, content, at in new:
+                c.execute(insert(messages).values(user_id=dst, role=role, content=content, mid=None,
+                                                  processed=True, created_at=at))
+        return True
 
     def message_role_by_mid(self, mid: str) -> str | None:
         with self.engine.begin() as c:
