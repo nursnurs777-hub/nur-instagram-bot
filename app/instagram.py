@@ -144,6 +144,24 @@ class InstagramClient:
             return None
         return (r.json() or {}).get("username")
 
+    async def recent_messages(self, user_id: str, limit: int = 6) -> list[dict]:
+        """Последние сообщения переписки с клиентом: [{'id','from_id','text','created_time'}], новые первыми."""
+        if not self.token:
+            return []
+        r = await self.http.get(
+            f"{self.base}/me/conversations",
+            params={"platform": "instagram", "user_id": user_id,
+                    "fields": f"messages.limit({limit}){{id,from,message,created_time}}"},
+            headers={"Authorization": f"Bearer {self.token}"}, timeout=10)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Instagram API {r.status_code}: {r.text[:300]}")
+        out = []
+        for conv in (r.json() or {}).get("data", []):
+            for m in (conv.get("messages") or {}).get("data", []):
+                out.append({"id": m.get("id"), "from_id": str((m.get("from") or {}).get("id", "")),
+                            "text": m.get("message") or "", "created_time": m.get("created_time") or ""})
+        return out
+
     async def typing(self, user_id: str, on: bool = True) -> None:
         try:
             await self._post({"recipient": {"id": user_id}, "sender_action": "typing_on" if on else "typing_off"})

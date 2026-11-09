@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from dataclasses import dataclass, field
@@ -26,6 +26,15 @@ def fallback_text(b) -> str:
     if wa:
         return f"{base} Напишите, пожалуйста, менеджеру в WhatsApp: {wa}"
     return f"{base} Менеджер ответит вам здесь в ближайшее время."
+
+
+def _parse_ig_time(value: str):
+    """'2026-11-09T14:53:20+0000' → наивное UTC."""
+    try:
+        dt = datetime.strptime(value, "%Y-%m-%dT%H:%M:%S%z")
+    except (TypeError, ValueError):
+        return None
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass
@@ -97,6 +106,7 @@ class Processor:
         self._unknown_accounts: set[str] = set()
         self._own_accounts: dict[str, bool] = {}  # key -> собеседник это наш же филиал
         self._reply_times: dict[str, list] = {}
+        self._last_reconcile = None
         self._debounce: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         # фото ждут обработки: (id сообщения в БД, ссылка Instagram). Ссылки живут только в памяти.
@@ -253,8 +263,17 @@ class Processor:
 
         self._debounce[user_id] = self._spawn(later())
 
+    def _is_automation(self, ev: Event, conv: dict, received_at) -> bool:
+        """Автоответ рекламы или ChatPlace: пришёл через секунды после клиента или совпадает с известным текстом."""
+        text = (ev.text or "").strip().lower()
+        if text and any(text.startswith(t) for t in self.s.automation_texts):
+            return True
+        last_user = conv.get("last_user_at")
+        return bool(last_user) and 0 <= (received_at - last_user).total_seconds() <= self.s.automation_echo_seconds
+
     async def _handle_echo(self, ev: Event, key: str | None = None) -> None:
         key = key or ev.user_id
+        received_at = utcnow()
         role = await self._db(self.store.message_role_by_mid, ev.mid)
         if role in ("assistant", "manager"):
             return
@@ -264,7 +283,18 @@ class Processor:
         if role in ("assistant", "manager"):
             return
         now = utcnow()
-        await self._db(self.store.get_conv, key)
+        conv = await self._db(self.store.get_conv, key)
+        if self._is_automation(ev, conv, received_at):
+            # Автоответ уже ответил на вопрос клиента: в историю, но без паузы — следующее сообщение клиента
+            # бот подхватит сразу
+            await self._db(self.store.add_message, key, "manager",
+                           "[автоответ] " + (_render_user_text(ev) or "[вложение]"), ev.mid)
+            await self._db(self.store.mark_all_processed_before, key, now)
+            t = self._debounce.get(key)
+            if t and not t.done():
+                t.cancel()
+            log.info("Автоответ в диалоге %s — бот не встаёт на паузу", key)
+            return
         await self._db(self.store.add_message, key, "manager", _render_user_text(ev) or "[вложение]", ev.mid)
         # всё, что клиент написал до ответа менеджера, считаем обработанным менеджером
         await self._db(self.store.mark_all_processed_before, key, now)
@@ -414,6 +444,39 @@ class Processor:
         content = content.replace(placeholder, note, 1) if placeholder in content else f"{note} {content}"
         self.store.update_message_content(msg_id, content)
 
+    async def reconcile(self, now, since: timedelta) -> int:
+        """Догружает сообщения клиентов, которые Instagram не прислал вебхуком, и отвечает на них."""
+        keys = await self._db(self.store.convs_to_reconcile, now, since, timedelta(hours=self.s.window_hours))
+        found = 0
+        for key in keys[:40]:
+            rt, uid = self.split_key(key)
+            fn = getattr(rt.ig, "recent_messages", None)
+            if fn is None:
+                continue
+            try:
+                msgs = await fn(uid)
+            except Exception as e:
+                log.warning("Не удалось проверить пропущенные сообщения %s: %s", key, e)
+                continue
+            last = await self._db(self.store.last_message, key)
+            last_at = last["created_at"] if last else None
+            new = []
+            for m in msgs:
+                if m["from_id"] != uid or not m["id"] or not m["text"].strip():
+                    continue
+                if await self._db(self.store.has_mid, m["id"]):
+                    continue
+                created = _parse_ig_time(m["created_time"])
+                if created is None or (last_at and created <= last_at) or created < now - timedelta(hours=self.s.window_hours):
+                    continue
+                new.append((created, m))
+            for created, m in sorted(new, key=lambda x: x[0]):
+                log.warning("Пропущенное сообщение от %s найдено через API — отвечаем", key)
+                await self._handle_incoming(Event(kind="message", user_id=uid, account_id="", mid=m["id"],
+                                                  text=m["text"]), key)
+                found += 1
+        return found
+
     # ------------------------------------------------------------------ планировщик
     async def scheduler(self) -> None:
         while True:
@@ -433,6 +496,14 @@ class Processor:
                 log.info("Пауза менеджера для %s закончилась — отвечаем на ожидающие сообщения", uid)
                 self._spawn(self.process_user(uid))
         await self._db(self.store.clear_expired_pauses, now)
+
+        if self.s.reconcile_enabled and (self._last_reconcile is None or
+                                         (now - self._last_reconcile).total_seconds() >= self.s.reconcile_every_minutes * 60):
+            first = self._last_reconcile is None
+            self._last_reconcile = now
+            # при старте смотрим всё 23-часовое окно, дальше — последние 3 часа
+            since = timedelta(hours=self.s.window_hours) if first else timedelta(hours=3)
+            await self.reconcile(now, since)
 
         if self.s.followup_enabled:
             local = datetime.now(ZoneInfo(self.s.timezone))

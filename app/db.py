@@ -175,6 +175,23 @@ class Store:
                 out.append(uid)
             return out
 
+    def convs_to_reconcile(self, now: datetime, since: timedelta, window: timedelta) -> list[str]:
+        """Диалоги, где последним писал не клиент, но недавно (клиент мог написать, а вебхук не дошёл)."""
+        with self.engine.begin() as c:
+            rows = c.execute(select(conversations.c.user_id).where(
+                conversations.c.manual_mode.is_(False),
+                conversations.c.opted_out.is_(False),
+                conversations.c.last_user_at.is_not(None),
+                conversations.c.last_user_at >= now - window,
+            )).all()
+            out = []
+            for (uid,) in rows:
+                last = c.execute(select(messages.c.role, messages.c.created_at).where(messages.c.user_id == uid)
+                                 .order_by(messages.c.id.desc()).limit(1)).first()
+                if last and last[0] != "user" and last[1] >= now - since:
+                    out.append(uid)
+            return out
+
     def stats(self) -> dict:
         with self.engine.begin() as c:
             return {

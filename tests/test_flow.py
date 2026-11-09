@@ -113,7 +113,8 @@ class FakeCatalogs:
 
 def make(tmp_path, **over):
     params = dict(database_url=f"sqlite:///{tmp_path}/t.db", debounce_seconds=0.05,
-                  echo_grace_seconds=0.05, allowed_user_ids=[], ig_account_id="BIZ", bot_enabled=True)
+                  echo_grace_seconds=0.05, allowed_user_ids=[], ig_account_id="BIZ", bot_enabled=True,
+                  automation_echo_seconds=0, automation_texts=[], reconcile_enabled=False)
     params.update(over)
     s = replace(Settings(), **params)
     ig, agent = FakeIG(), FakeAgent()
@@ -340,3 +341,66 @@ def test_followup_respects_window(tmp_path, hours, user_ago, expect):
 def test_followup_default_hours():
     s = Settings()
     assert (s.followup_hour_start, s.followup_hour_end) == (9, 22)
+
+
+
+# ------------------------------------------------------------ автоответы рекламы / ChatPlace
+
+def test_fast_automation_echo_does_not_pause(tmp_path):
+    async def go():
+        proc, ig, agent = make(tmp_path, automation_echo_seconds=6, debounce_seconds=0.3)
+        await proc.handle_event(msg("a", "0•0•24 бар ма?"))
+        await proc.handle_event(echo("auto-1", "Иә, қалған соманы бөліп төлеуге болады. Қай модель?"))
+        await settle(proc, 0.5)
+        conv = proc.store.get_conv("U1")
+        assert conv["paused_until"] is None
+        assert ig.sent == []  # на вопрос уже ответил автоответ — бот не дублирует
+        await proc.handle_event(msg("b", "18 pro max 256"))
+        await settle(proc, 0.5)
+        assert len(ig.sent) == 1 and "18 pro max 256" in ig.sent[0][1]
+    asyncio.run(go())
+
+
+def test_known_automation_text_does_not_pause(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path, automation_texts=["iphone моделін, жады көлемін"])
+        await proc.handle_event(echo("auto-2", "iPhone моделін, жады көлемін және жағдайын жазыңыз."))
+        await settle(proc)
+        assert proc.store.get_conv("U1")["paused_until"] is None
+    asyncio.run(go())
+
+
+def test_slow_manager_echo_still_pauses(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path, automation_echo_seconds=6)
+        await proc.handle_event(msg("a", "скидка будет?"))
+        await settle(proc)
+        proc.store.update_conv("U1", last_user_at=utcnow() - timedelta(seconds=40))
+        await proc.handle_event(echo("mgr-9", "Здравствуйте, это менеджер"))
+        await settle(proc)
+        assert proc.store.get_conv("U1")["paused_until"] is not None
+    asyncio.run(go())
+
+
+# ------------------------------------------------------------ пропущенные вебхуки
+
+def test_reconcile_picks_up_missed_message(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path)
+        await proc.handle_event(msg("a", "0•0•24 бар ма?"))
+        await settle(proc)
+        assert len(ig.sent) == 1
+        later = (utcnow() + timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%S+0000")
+        old = (utcnow() - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S+0000")
+
+        async def recent(uid, limit=6):
+            return [{"id": "m-missed", "from_id": "U1", "text": "18 pro max 256", "created_time": later},
+                    {"id": "bot-1", "from_id": "BIZ", "text": "ответ", "created_time": old},
+                    {"id": "a", "from_id": "U1", "text": "0•0•24 бар ма?", "created_time": old}]
+        ig.recent_messages = recent
+        n = await proc.reconcile(utcnow(), timedelta(hours=3))
+        await settle(proc)
+        assert n == 1 and len(ig.sent) == 2 and "18 pro max 256" in ig.sent[1][1]
+        # повторная проверка ничего не дублирует
+        assert await proc.reconcile(utcnow(), timedelta(hours=3)) == 0
+    asyncio.run(go())

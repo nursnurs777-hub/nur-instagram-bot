@@ -96,6 +96,16 @@ class Settings:
     debounce_seconds: float = field(default_factory=lambda: float(_env("DEBOUNCE_SECONDS", "4")))
     history_limit: int = field(default_factory=lambda: _int("HISTORY_LIMIT", 30))
     manager_pause_minutes: int = field(default_factory=lambda: _int("MANAGER_PAUSE_MINUTES", 5))
+    # Ответ с аккаунта быстрее этого срока после сообщения клиента — автоответ (реклама/ChatPlace), а не менеджер
+    automation_echo_seconds: float = field(default_factory=lambda: float(_env("AUTOMATION_ECHO_SECONDS", "6")))
+    # Начала известных автоответов (через «|»): такие сообщения не ставят бота на паузу
+    automation_texts: list[str] = field(default_factory=lambda: [t.strip().lower() for t in _env(
+        "AUTOMATION_TEXTS",
+        "iPhone моделін, жады көлемін және жағдайын жазыңыз|Иә, қалған соманы 0•0•24|"
+        "Хочешь оценить телефон по trade in|Жми на ссылку и узнай оценку").split("|") if t.strip()])
+    # Догрузка сообщений, которые Instagram не прислал вебхуком
+    reconcile_enabled: bool = field(default_factory=lambda: _env("RECONCILE_ENABLED", "true").lower() == "true")
+    reconcile_every_minutes: int = field(default_factory=lambda: _int("RECONCILE_EVERY_MINUTES", 5))
     resume_after_pause: bool = field(default_factory=lambda: _bool("RESUME_AFTER_PAUSE", True))
     echo_grace_seconds: float = field(default_factory=lambda: float(_env("ECHO_GRACE_SECONDS", "3")))
 
