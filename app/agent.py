@@ -158,6 +158,8 @@ def build_messages(history: list[dict], images: list[IncomingImage] | None = Non
         role = "user" if h["role"] == "user" else "assistant"
         text = h["content"] or ""
         if h["role"] == "manager":
+            if re.fullmatch(r"\s*(\[вложение(: [^\]]+)?\]\s*)*", text):
+                continue  # служебная карточка Instagram, не ответ
             text = f"[Ответ менеджера] {text}"
         if not text.strip():
             continue
@@ -167,6 +169,9 @@ def build_messages(history: list[dict], images: list[IncomingImage] | None = Non
             msgs.append({"role": role, "content": [{"type": "text", "text": text}]})
     while msgs and msgs[0]["role"] != "user":
         msgs.pop(0)
+    if msgs and msgs[-1]["role"] == "assistant" and not extra_user_note:
+        # после клиента был только автоответ — API требует, чтобы диалог заканчивался клиентом
+        extra_user_note = "[служебно: ответь на последнее сообщение клиента выше]"
     if extra_user_note:
         if msgs and msgs[-1]["role"] == "user":
             msgs[-1]["content"].append({"type": "text", "text": extra_user_note})

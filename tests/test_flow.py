@@ -438,3 +438,15 @@ def test_recover_stuck_after_service_card(tmp_path):
         proc.store.update_conv("U2", last_user_at=utcnow())
         assert await proc.recover_stuck(utcnow()) == 0
     asyncio.run(go())
+
+
+
+def test_build_messages_ends_with_user_after_noise_and_autoreply():
+    h = [{"role": "user", "content": "18 про Макс голубой"},
+         {"role": "manager", "content": "[вложение: template]"}]
+    m = build_messages(h)
+    assert m[-1]["role"] == "user" and len(m) == 1
+    h2 = [{"role": "user", "content": "0•0•24 бар ма?"},
+          {"role": "manager", "content": "[автоответ] Иә, болады"}]
+    m2 = build_messages(h2)
+    assert m2[-1]["role"] == "user"
