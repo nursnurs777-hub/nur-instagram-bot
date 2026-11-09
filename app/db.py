@@ -112,6 +112,22 @@ class Store:
         with self.engine.begin() as c:
             return c.execute(select(messages.c.id).where(messages.c.mid == mid)).first() is not None
 
+    def message_owner_by_mid(self, mid: str) -> str | None:
+        with self.engine.begin() as c:
+            r = c.execute(select(messages.c.user_id).where(messages.c.mid == mid)).first()
+            return r[0] if r else None
+
+    def copy_context(self, src: str, dst: str, limit: int = 4) -> None:
+        """Переносит последние реплики (комментарий + ответ бота) в диалог директа, если у него другой ID."""
+        rows = self.history(src, limit)
+        if not rows:
+            return
+        self.get_conv(dst)
+        with self.engine.begin() as c:
+            for r in rows:
+                c.execute(insert(messages).values(user_id=dst, role=r["role"], content=r["content"], mid=None,
+                                                  processed=True, created_at=r["created_at"]))
+
     def message_role_by_mid(self, mid: str) -> str | None:
         with self.engine.begin() as c:
             r = c.execute(select(messages.c.role).where(messages.c.mid == mid)).first()

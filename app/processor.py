@@ -13,6 +13,7 @@ from .agent import IncomingImage, SalesAgent
 from .branches import Branch, primary_from_settings
 from .config import Settings
 from .db import Store, utcnow
+from .comments import COMMENT_SYSTEM, CommentEvent, classify, public_reply
 from .instagram import Event, InstagramClient
 from .media import describe, shrink
 from .sheets import CatalogProvider
@@ -275,6 +276,62 @@ class Processor:
 
         self._debounce[user_id] = self._spawn(later())
 
+    async def _carry_comment_context(self, mid: str, key: str) -> None:
+        """Ответ на комментарий ушёл в директ: у директа может быть свой ID — переносим туда комментарий и ответ."""
+        owner = await self._db(self.store.message_owner_by_mid, mid)
+        if owner and owner != key and owner.split(":")[-1] != key.split(":")[-1]:
+            hist = await self._db(self.store.history, key, 1)
+            if not hist:
+                await self._db(self.store.copy_context, owner, key, 2)
+
+    async def handle_comment(self, ev: "CommentEvent") -> None:
+        if not self.s.comments_enabled or not self.s.bot_enabled:
+            return
+        rt = await self.runtime_for_account(ev.account_id)
+        if ev.from_id in rt.account_ids or (ev.username or "").lower() in self._own_handles():
+            return  # наш же ответ или комментарий другого нашего аккаунта
+        if self.s.allowed_user_ids and ev.from_id not in self.s.allowed_user_ids:
+            return
+        mid = f"c:{ev.comment_id}"
+        if await self._db(self.store.has_mid, mid):
+            return
+        kind = classify(ev.text)
+        key = rt.branch.conv_key(ev.from_id)
+        log.info("[%s] комментарий @%s (%s): %s", rt.branch.key, ev.username, kind, ev.text[:80])
+        if kind == "skip":
+            return
+        await self._db(self.store.get_conv, key)
+        if not await self._db(self.store.add_message, key, "user",
+                              f"[комментарий под публикацией] {ev.text}", mid, True):
+            return
+        if kind == "negative":
+            log.warning("Негативный комментарий @%s (%s): %s", ev.username, rt.branch.city, ev.text[:200])
+            return
+        async with self._lock(key):
+            try:
+                conv = await self._db(self.store.get_conv, key)
+                history = await self._db(self.store.history, key, self.s.history_limit)
+                catalog = await rt.catalogs.get()
+                result = await rt.agent.reply(history, conv["state"], catalog, None, extra_system=COMMENT_SYSTEM)
+                text = (result.text or "").strip()
+            except Exception:
+                log.exception("Ошибка генерации ответа на комментарий %s", ev.comment_id)
+                return
+            if not text:
+                return
+            try:
+                dm_mid = await rt.ig.private_reply(ev.comment_id, text)
+            except Exception as e:
+                log.warning("Не удалось ответить в директ на комментарий @%s: %s", ev.username, e)
+                return
+            await self._db(self.store.add_message, key, "assistant", text, dm_mid, True)
+            await self._db(self.store.update_conv, key, state=result.state, last_bot_at=utcnow())
+            try:
+                await rt.ig.reply_to_comment(ev.comment_id, public_reply(ev.text))
+            except Exception as e:
+                log.warning("Не удалось ответить под комментарием @%s: %s", ev.username, e)
+            log.info("[%s] ответили на комментарий @%s", rt.branch.key, ev.username)
+
     def _is_automation(self, ev: Event, conv: dict, received_at) -> bool:
         """Автоответ рекламы или ChatPlace: пришёл через секунды после клиента или совпадает с известным текстом."""
         text = (ev.text or "").strip().lower()
@@ -288,6 +345,7 @@ class Processor:
         received_at = utcnow()
         role = await self._db(self.store.message_role_by_mid, ev.mid)
         if role in ("assistant", "manager"):
+            await self._carry_comment_context(ev.mid, key)
             return
         # Echo может прийти раньше, чем мы сохранили mid своего ответа — даём боту фору
         await asyncio.sleep(self.s.echo_grace_seconds)
@@ -529,6 +587,7 @@ class Processor:
                 lines.append(f"{names[key]}: клиентов {d['clients']}, сообщений {d['messages']}, "
                              f"ответов бота {d['bot']}, ответов менеджера {d['manager']}")
         c = self.notifier.counters
+        lines.append(f"Ответов на комментарии: {c.get('comments', 0)}, негативных: {c.get('negative', 0)}.")
         lines.append(f"Напоминаний клиентам: {c.get('followups', 0)}. "
                      f"Бот сам нашёл и ответил пропущенным: {c.get('recovered', 0)}.")
         problems = c.get("errors", 0) + c.get("send_failed", 0) + c.get("sfon", 0) + c.get("loops", 0)

@@ -162,6 +162,36 @@ class InstagramClient:
                             "text": m.get("message") or "", "created_time": m.get("created_time") or ""})
         return out
 
+    async def reply_to_comment(self, comment_id: str, text: str) -> str | None:
+        """Публичный ответ под комментарием."""
+        r = await self.http.post(f"{self.base}/{comment_id}/replies", data={"message": text},
+                                 headers={"Authorization": f"Bearer {self.token}"})
+        if r.status_code >= 400:
+            raise RuntimeError(f"Instagram API {r.status_code}: {r.text[:300]}")
+        return (r.json() or {}).get("id")
+
+    async def private_reply(self, comment_id: str, text: str) -> str | None:
+        """Личное сообщение автору комментария (одно на комментарий, в течение 7 дней)."""
+        data = await self._post({"recipient": {"comment_id": comment_id}, "message": {"text": text[:MAX_MESSAGE_CHARS]}})
+        return data.get("message_id")
+
+    async def ensure_subscribed(self, fields: list[str]) -> list[str]:
+        """Добавляет поля вебхука для аккаунта (не убирая уже подписанные); возвращает итоговый список."""
+        h = {"Authorization": f"Bearer {self.token}"}
+        r = await self.http.get(f"{self.base}/me/subscribed_apps", headers=h)
+        current: set[str] = set()
+        if r.status_code < 400:
+            for app_ in (r.json() or {}).get("data", []):
+                current |= set(app_.get("subscribed_fields") or [])
+        want = sorted(current | set(fields))
+        if set(fields) <= current:
+            return want
+        r = await self.http.post(f"{self.base}/me/subscribed_apps", params={"subscribed_fields": ",".join(want)},
+                                 headers=h)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Instagram API {r.status_code}: {r.text[:300]}")
+        return want
+
     async def typing(self, user_id: str, on: bool = True) -> None:
         try:
             await self._post({"recipient": {"id": user_id}, "sender_action": "typing_on" if on else "typing_off"})

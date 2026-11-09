@@ -14,6 +14,7 @@ from .agent import SalesAgent
 from .branches import load_branches
 from .config import settings
 from .db import Store
+from .comments import parse_comment_events
 from .instagram import InstagramClient, parse_events, verify_signature
 from .processor import BranchRuntime, Processor
 from .telegram import HideTelegramRequests, TelegramLogHandler, TelegramNotifier
@@ -60,6 +61,15 @@ async def lifespan(app: FastAPI):
     app.state.store, app.state.catalogs, app.state.proc = store, primary.catalogs, proc
     log.info("Филиалы: %s", ", ".join(f"{rt.branch.city} ({rt.branch.instagram})" for rt in runtimes))
     await proc.resolve_accounts()
+    if settings.comments_enabled:
+        for rt in runtimes:
+            if not rt.branch.active:
+                continue
+            try:
+                fields = await rt.ig.ensure_subscribed(["messages", "comments"])
+                log.info("[%s] подписка Instagram: %s", rt.branch.key, ", ".join(fields))
+            except Exception as e:
+                log.warning("[%s] Не удалось подписаться на комментарии Instagram: %s", rt.branch.key, e)
     for prov in providers.values():
         try:
             await prov.get()
@@ -125,6 +135,8 @@ async def webhook(request: Request, x_hub_signature_256: str | None = Header(def
     proc: Processor = request.app.state.proc
     for ev in parse_events(payload):
         proc._spawn(proc.handle_event(ev))  # Meta ждёт быстрый 200 — обрабатываем в фоне
+    for cev in parse_comment_events(payload):
+        proc._spawn(proc.handle_comment(cev))
     return {"ok": True}
 
 
