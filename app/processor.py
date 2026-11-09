@@ -520,7 +520,9 @@ class Processor:
         st = await self._db(self.store.daily_stats, now, timedelta(hours=24))
         tz = ZoneInfo(self.s.timezone)
         names = {"astana": "Астана", "shymkent": "Шымкент"}
-        lines = ["📊 Отчёт ИИ-бота за сутки"]
+        lines = ["📊 Отчёт ИИ-бота за сутки",
+                 f"Написали клиентов: {st['total_clients']}, ответили: {st['answered_clients']}, "
+                 f"без ответа: {len(st['unanswered'])}"]
         for key in ("astana", "shymkent"):
             d = st.get(key)
             if d:

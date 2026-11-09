@@ -16,7 +16,7 @@ from .config import settings
 from .db import Store
 from .instagram import InstagramClient, parse_events, verify_signature
 from .processor import BranchRuntime, Processor
-from .telegram import TelegramLogHandler, TelegramNotifier
+from .telegram import HideTelegramRequests, TelegramLogHandler, TelegramNotifier
 from .sheets import CatalogProvider
 from .stock import StockService
 from .testchat import router as testchat_router
@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
     notifier = TelegramNotifier.from_env()
     tg_task = None
     if notifier:
+        logging.getLogger("httpx").addFilter(HideTelegramRequests())
         logging.getLogger().addHandler(TelegramLogHandler(notifier))
         proc.notifier = notifier
         tg_task = asyncio.create_task(notifier.run())

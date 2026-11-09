@@ -36,3 +36,14 @@ def test_daily_stats_and_report(tmp_path):
     assert d["astana"]["clients"] == 1 and d["astana"]["bot"] == 1
     assert d["shymkent"]["messages"] == 1
     assert [u[0] for u in d["unanswered"]] == ["shymkent:S1"]
+    assert d["total_clients"] == 2 and d["answered_clients"] == 1
+
+
+def test_token_hidden_from_logs():
+    import logging as lg
+    from app.telegram import HideTelegramRequests
+    f = HideTelegramRequests()
+    rec = lg.LogRecord("httpx", lg.INFO, "", 0, "GET https://api.telegram.org/bot123:ABC/getUpdates", None, None)
+    assert f.filter(rec) is False
+    rec2 = lg.LogRecord("httpx", lg.INFO, "", 0, "GET https://graph.instagram.com/v23.0/me", None, None)
+    assert f.filter(rec2) is True

@@ -119,6 +119,16 @@ class TelegramNotifier:
         await self.http.aclose()
 
 
+class HideTelegramRequests(logging.Filter):
+    """httpx пишет в лог полный адрес запроса, а в нём токен бота — такие строки не пишем."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return "api.telegram.org" not in record.getMessage()
+        except Exception:
+            return True
+
+
 class TelegramLogHandler(logging.Handler):
     """Ловит важные строки логов бота и превращает их в тревоги/счётчики."""
 

@@ -283,6 +283,7 @@ class Store:
             for b, d in branches.items():
                 d["clients"] = len(clients.get(b, ()))
             out.update(branches)
+            out["total_clients"] = sum(len(v) for v in clients.values())
             # кто сейчас без ответа: последнее содержательное сообщение — от клиента, старше 10 минут
             convs = c.execute(select(conversations.c.user_id).where(
                 conversations.c.manual_mode.is_(False), conversations.c.last_user_at >= start)).all()
@@ -294,6 +295,7 @@ class Store:
                 hist = [h for h in hist if not (h[0] == "manager" and _is_noise(h[1]))]
                 if hist and hist[0][0] == "user" and hist[0][2] <= now - timedelta(minutes=10):
                     out["unanswered"].append((uid, (hist[0][1] or "")[:60], hist[0][2]))
+        out["answered_clients"] = max(0, out["total_clients"] - len(out["unanswered"]))
         return out
 
     def stats(self) -> dict:
