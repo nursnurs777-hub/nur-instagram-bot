@@ -450,3 +450,16 @@ def test_build_messages_ends_with_user_after_noise_and_autoreply():
           {"role": "manager", "content": "[автоответ] Иә, болады"}]
     m2 = build_messages(h2)
     assert m2[-1]["role"] == "user"
+
+
+
+def test_recover_stuck_after_fallback():
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    st = Store(f"sqlite:///{d}/t.db")
+    st.get_conv("U3")
+    st.add_message("U3", "user", "18 про Макс голубой", "u-3", True)
+    st.add_message("U3", "manager", "[вложение: template]", "c-3")
+    st.add_message("U3", "assistant", "Извините, сейчас не получается ответить автоматически. Напишите…", "b-3")
+    st.update_conv("U3", last_user_at=utcnow())
+    assert st.convs_stuck(utcnow(), timedelta(hours=23))[0][0] == "U3"

@@ -38,6 +38,9 @@ messages = Table(
 )
 
 
+FALLBACK_PREFIX = "Извините, сейчас не получается ответить автоматически"
+
+
 def _is_noise(content: str | None) -> bool:
     """Пустое «исходящее» без текста: служебная карточка Instagram, а не ответ менеджера."""
     c = (content or "").strip()
@@ -200,7 +203,9 @@ class Store:
                 hist = c.execute(select(messages.c.id, messages.c.role, messages.c.content, messages.c.processed)
                                  .where(messages.c.user_id == uid).order_by(messages.c.id.desc()).limit(10)).all()
                 i = 0
-                while i < len(hist) and hist[i][1] == "manager" and _is_noise(hist[i][2]):
+                while i < len(hist) and ((hist[i][1] == "manager" and _is_noise(hist[i][2])) or
+                                         (hist[i][1] in ("assistant", "manager") and
+                                          (hist[i][2] or "").startswith(FALLBACK_PREFIX))):
                     i += 1
                 if i == 0 or i >= len(hist) or hist[i][1] != "user":
                     continue  # после клиента нет пустых «ответов» — это не наш случай
