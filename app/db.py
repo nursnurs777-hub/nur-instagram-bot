@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -35,6 +36,12 @@ messages = Table(
     Column("processed", Boolean, nullable=False, default=True),
     Column("created_at", DateTime, nullable=False, default=lambda: utcnow()),
 )
+
+
+def _is_noise(content: str | None) -> bool:
+    """Пустое «исходящее» без текста: служебная карточка Instagram, а не ответ менеджера."""
+    c = (content or "").strip()
+    return c in ("", "[вложение]") or bool(re.fullmatch(r"(\[вложение: [^\]]+\]\s*)+", c))
 
 
 def utcnow() -> datetime:
@@ -184,7 +191,6 @@ class Store:
     def convs_stuck(self, now: datetime, window: timedelta) -> list[tuple[str, list[int]]]:
         """Диалоги, где последним по сути писал клиент (после него — только пустые служебные «ответы»),
         а бот не ответил."""
-        noise = {"", "[вложение]"}
         out = []
         with self.engine.begin() as c:
             rows = c.execute(select(conversations.c.user_id).where(
@@ -194,7 +200,7 @@ class Store:
                 hist = c.execute(select(messages.c.id, messages.c.role, messages.c.content, messages.c.processed)
                                  .where(messages.c.user_id == uid).order_by(messages.c.id.desc()).limit(10)).all()
                 i = 0
-                while i < len(hist) and hist[i][1] == "manager" and (hist[i][2] or "").strip() in noise:
+                while i < len(hist) and hist[i][1] == "manager" and _is_noise(hist[i][2]):
                     i += 1
                 if i == 0 or i >= len(hist) or hist[i][1] != "user":
                     continue  # после клиента нет пустых «ответов» — это не наш случай

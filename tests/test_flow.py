@@ -426,7 +426,7 @@ def test_recover_stuck_after_service_card(tmp_path):
         # так выглядело в базе до исправления: клиент → пустой «ответ менеджера», клиент обработан, бот молчал
         proc.store.get_conv("U1")
         proc.store.add_message("U1", "user", "12 айфон 128 гб 80 емкост", "u-1", True)
-        proc.store.add_message("U1", "manager", "[вложение]", "card-2")
+        proc.store.add_message("U1", "manager", "[вложение: template]", "card-2")
         proc.store.update_conv("U1", last_user_at=utcnow(), paused_until=utcnow() + timedelta(minutes=5))
         n = await proc.recover_stuck(utcnow())
         await settle(proc)
