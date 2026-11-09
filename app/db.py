@@ -163,27 +163,39 @@ class Store:
                                                   conversations.c.paused_until <= now)
                       .values(paused_until=None))
 
-    def convs_for_followup(self, now: datetime, after: timedelta, window: timedelta) -> list[str]:
+    def convs_for_followup(self, now: datetime, after: timedelta, window: timedelta,
+                           automation_texts: list[str] | None = None) -> list[str]:
+        """Клиент не ответил на последнее сообщение магазина (бота или автоответа рекламы) дольше `after`,
+        и 23-часовое окно Instagram ещё открыто. Если последним писал живой менеджер — не трогаем."""
+        autos = [t.lower() for t in (automation_texts or [])]
+        out = []
         with self.engine.begin() as c:
-            rows = c.execute(select(conversations.c.user_id).where(
-                conversations.c.followup_sent.is_(False),
+            rows = c.execute(select(conversations.c.user_id, conversations.c.followup_sent).where(
                 conversations.c.opted_out.is_(False),
                 conversations.c.manual_mode.is_(False),
-                conversations.c.paused_until.is_(None),
-                conversations.c.last_bot_at.is_not(None),
+                (conversations.c.paused_until.is_(None)) | (conversations.c.paused_until <= now),
                 conversations.c.last_user_at.is_not(None),
-                conversations.c.last_bot_at > conversations.c.last_user_at,
-                conversations.c.last_bot_at <= now - after,
                 conversations.c.last_user_at >= now - window,
             )).all()
-            out = []
-            for (uid,) in rows:
-                conv = c.execute(select(conversations.c.last_manager_at, conversations.c.last_user_at)
-                                 .where(conversations.c.user_id == uid)).first()
-                if conv and conv[0] and conv[0] > conv[1]:
-                    continue  # менеджер уже вёл разговор после клиента
-                out.append(uid)
-            return out
+            for uid, sent in rows:
+                hist = c.execute(select(messages.c.role, messages.c.content, messages.c.created_at)
+                                 .where(messages.c.user_id == uid).order_by(messages.c.id.desc()).limit(8)).all()
+                hist = [h for h in hist if not (h[0] == "manager" and _is_noise(h[1]))
+                        and not (h[0] == "assistant" and not (h[1] or "").strip())]
+                if not hist:
+                    continue
+                role, content, created = hist[0]
+                if role == "user" or created > now - after:
+                    continue
+                text = (content or "").strip().lower()
+                if role == "manager":
+                    is_auto = text.startswith("[автоответ]") or any(text.startswith(t) for t in autos)
+                    if not is_auto:
+                        continue  # живой менеджер ведёт разговор
+                    out.append(uid)  # автоответ рекламы: клиент так и не написал — будим
+                elif not sent:
+                    out.append(uid)
+        return out
 
     def mark_unprocessed(self, ids: list[int]) -> None:
         if not ids:

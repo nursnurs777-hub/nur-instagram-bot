@@ -311,6 +311,11 @@ def test_prompt_rendered_with_store_details():
 
 def _ripe(proc, user_hours_ago, bot_hours_ago):
     now = utcnow()
+    from sqlalchemy import update as upd
+    from app.db import messages as mt
+    with proc.store.engine.begin() as c:
+        c.execute(upd(mt).where(mt.c.role == "user").values(created_at=now - timedelta(hours=user_hours_ago)))
+        c.execute(upd(mt).where(mt.c.role == "assistant").values(created_at=now - timedelta(hours=bot_hours_ago)))
     proc.store.update_conv("U1", last_user_at=now - timedelta(hours=user_hours_ago),
                            last_bot_at=now - timedelta(hours=bot_hours_ago), followup_sent=False)
 
@@ -481,4 +486,56 @@ def test_recover_unanswered_and_no_loop(tmp_path):
         assert len(ig.sent) == 1
         # второй раз в течение часа тот же диалог не трогаем
         assert await proc.recover_unanswered(utcnow()) == 0
+    asyncio.run(go())
+
+
+
+def test_followup_after_ad_autoreply_without_client_answer(tmp_path):
+    async def go():
+        proc, ig, agent = make(tmp_path, followup_enabled=True, followup_hour_start=0, followup_hour_end=24,
+                               automation_texts=["iphone моделін, жады көлемін"])
+        proc.store.get_conv("U5")
+        t0 = utcnow() - timedelta(hours=4)
+        proc.store.add_message("U5", "user", "Ескі iPhone-ымды қаншаға бағалайсыздар?", "u-5", True, t0)
+        proc.store.add_message("U5", "manager", "iPhone моделін, жады көлемін және жағдайын жазыңыз.", "a-5", True,
+                               t0 + timedelta(seconds=2))
+        proc.store.update_conv("U5", last_user_at=t0, followup_sent=True, last_manager_at=t0)
+        await proc.tick()
+        await settle(proc)
+        assert len(ig.sent) == 1 and ig.sent[0][0] == "U5"
+        await proc.tick()  # второго нет
+        await settle(proc)
+        assert len(ig.sent) == 1
+    asyncio.run(go())
+
+
+def test_no_followup_after_live_manager_or_thanks(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path, followup_enabled=True, followup_hour_start=0, followup_hour_end=24)
+        t0 = utcnow() - timedelta(hours=4)
+        proc.store.get_conv("U6")
+        proc.store.add_message("U6", "user", "скидка будет?", "u-6", True, t0)
+        proc.store.add_message("U6", "manager", "50-60 шамасында", "m-6", True, t0 + timedelta(minutes=1))
+        proc.store.update_conv("U6", last_user_at=t0)
+        proc.store.get_conv("U7")
+        proc.store.add_message("U7", "user", "Ок спасибо", "u-7", True, t0)
+        proc.store.add_message("U7", "assistant", "Пожалуйста! Если что — пишите 🙂", "b-7", True, t0 + timedelta(seconds=5))
+        proc.store.update_conv("U7", last_user_at=t0)
+        await proc.tick()
+        await settle(proc)
+        assert ig.sent == []
+    asyncio.run(go())
+
+
+def test_followup_after_bot_answer_without_question(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path, followup_enabled=True, followup_hour_start=0, followup_hour_end=24)
+        t0 = utcnow() - timedelta(hours=4)
+        proc.store.get_conv("U8")
+        proc.store.add_message("U8", "user", "сколько 18 про макс", "u-8", True, t0)
+        proc.store.add_message("U8", "assistant", "iPhone 18 Pro Max 256 ГБ — 800 000 ₸.", "b-8", True, t0 + timedelta(seconds=5))
+        proc.store.update_conv("U8", last_user_at=t0)
+        await proc.tick()
+        await settle(proc)
+        assert len(ig.sent) == 1
     asyncio.run(go())

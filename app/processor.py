@@ -97,6 +97,10 @@ def _render_user_text(ev: Event) -> str:
 REAL_ATTACHMENTS = {"image", "video", "audio", "file", "share", "ig_reel", "reel", "story_mention", "animated_image"}
 
 
+CLOSING_RX = re.compile(r"\b(спасибо|спс|рахмет|рақмет|ок|окей|понял|поняла|хорошо|ясно|не надо|не нужно|"
+                        r"до свидания|сау бол|сау болыңыз|жақсы|түсінікті)\b", re.I)
+
+
 class Processor:
     def __init__(self, settings: Settings, store: Store, ig: InstagramClient, agent: SalesAgent,
                  catalogs: CatalogProvider, runtimes: list[BranchRuntime] | None = None):
@@ -111,6 +115,7 @@ class Processor:
         self._own_accounts: dict[str, bool] = {}  # key -> собеседник это наш же филиал
         self._reply_times: dict[str, list] = {}
         self._last_reconcile = None
+        self._followup_tried: dict[str, object] = {}
         self._recovered: dict[str, object] = {}  # key -> когда последний раз чинили диалог
         self._debounce: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -352,11 +357,16 @@ class Processor:
 
             extra_system = extra_note = None
             if followup:
-                extra_system = ("СЛУЖЕБНО: клиент давно не отвечает на твой вопрос. Напиши ОДНО короткое "
-                                "ненавязчивое напоминание на языке клиента по теме разговора (пример из раздела 19). "
-                                "Без нового приветствия, если вы уже здоровались сегодня; если переписка была вчера, "
-                                "можно коротко поздороваться. Без ссылок и давления.")
-                extra_note = "[служебное событие: клиент не ответил на вопрос, это единственное напоминание]"
+                extra_system = (
+                    "СЛУЖЕБНО: клиент перестал отвечать. Напиши ОДНО короткое сообщение (1–2 предложения) на языке "
+                    "клиента, чтобы вернуть его к покупке (раздел 19). Напомни, что именно он хотел (модель, сумма "
+                    "Trade-in, доплата, рассрочка), и дай понятную пользу: например, что старый телефон уменьшит "
+                    "цену, что рассрочка Kaspi 0-0-24 — небольшой платёж в месяц, что можно забронировать. Закончи "
+                    "одним лёгким вопросом, на который просто ответить. Если клиент спросил про оценку и не прислал "
+                    "данные — попроси модель, память и процент аккумулятора и пообещай сразу назвать сумму. "
+                    "Только факты из разговора и инструментов: не придумывай скидки, акции и «осталось мало». "
+                    "Без ссылок. Без нового приветствия, если вы уже общались сегодня.")
+                extra_note = "[служебное событие: клиент не ответил — это единственное напоминание]"
 
             if self._loop_guard(user_id):
                 log.warning("Зацикливание с %s: %d ответов за 10 мин — пауза на час", user_id,
@@ -563,12 +573,19 @@ class Processor:
             if self.s.followup_hour_start <= local.hour < self.s.followup_hour_end:
                 uids = await self._db(self.store.convs_for_followup, now,
                                       timedelta(minutes=self.s.followup_after_minutes),
-                                      timedelta(hours=self.s.window_hours))
+                                      timedelta(hours=self.s.window_hours), self.s.automation_texts)
                 for uid in uids:
-                    hist = await self._db(self.store.history, uid, 6)
+                    tried = self._followup_tried.get(uid)
+                    if tried and (now - tried).total_seconds() < 6 * 3600:
+                        continue
+                    hist = await self._db(self.store.history, uid, 8)
+                    last_user = next((h for h in reversed(hist) if h["role"] == "user" and h["content"]), None)
                     last = next((h for h in reversed(hist) if h["content"]), None)
-                    if not last or last["role"] != "assistant" or "?" not in last["content"][-200:]:
+                    # клиент сам закрыл разговор («спасибо», «понял») и бот ничего не спросил — не будим
+                    if (last_user and CLOSING_RX.search(last_user["content"]) and last and last["role"] == "assistant"
+                            and "?" not in last["content"][-200:]):
                         await self._db(self.store.update_conv, uid, followup_sent=True)
                         continue
+                    self._followup_tried[uid] = now
                     log.info("Повторное касание для %s", uid)
                     self._spawn(self.process_user(uid, followup=True))
