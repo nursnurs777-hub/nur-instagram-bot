@@ -36,9 +36,11 @@ def test_handle_comment_flow(tmp_path):
 
         async def reply_to_comment(cid, text):
             ig.public.append((cid, text)); return "r-1"
-        ig.private_reply, ig.reply_to_comment = private_reply, reply_to_comment
+        async def media_caption(mid):
+            return "iPhone 18 Pro Max уже в наличии!"
+        ig.private_reply, ig.reply_to_comment, ig.media_caption = private_reply, reply_to_comment, media_caption
         from app.comments import CommentEvent
-        await proc.handle_comment(CommentEvent("BIZ", "C1", "U9", "kli", "сколько стоит 17 про?"))
+        await proc.handle_comment(CommentEvent("BIZ", "C1", "U9", "kli", "сколько стоит 17 про?", "M1"))
         await proc.handle_comment(CommentEvent("BIZ", "C1", "U9", "kli", "сколько стоит 17 про?"))  # повтор
         await proc.handle_comment(CommentEvent("BIZ", "C2", "U9", "kli", "🔥🔥"))
         await settle(proc)
@@ -50,4 +52,5 @@ def test_handle_comment_flow(tmp_path):
         await settle(proc)
         hist = proc.store.history("IGSID9", 5)
         assert any("комментарий" in h["content"] for h in hist)
+        assert any("iPhone 18 Pro Max" in h["content"] for h in proc.store.history("U9", 5))
     asyncio.run(go())

@@ -162,6 +162,16 @@ class InstagramClient:
                             "text": m.get("message") or "", "created_time": m.get("created_time") or ""})
         return out
 
+    async def media_caption(self, media_id: str) -> str:
+        """Подпись к публикации (чтобы понять, о каком товаре комментарий)."""
+        if not media_id or not self.token:
+            return ""
+        r = await self.http.get(f"{self.base}/{media_id}", params={"fields": "caption"},
+                                headers={"Authorization": f"Bearer {self.token}"}, timeout=8)
+        if r.status_code >= 400:
+            return ""
+        return ((r.json() or {}).get("caption") or "").strip()
+
     async def reply_to_comment(self, comment_id: str, text: str) -> str | None:
         """Публичный ответ под комментарием."""
         r = await self.http.post(f"{self.base}/{comment_id}/replies", data={"message": text},

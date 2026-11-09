@@ -301,8 +301,16 @@ class Processor:
         if kind == "skip":
             return
         await self._db(self.store.get_conv, key)
-        if not await self._db(self.store.add_message, key, "user",
-                              f"[комментарий под публикацией] {ev.text}", mid, True):
+        caption = ""
+        if kind == "answer":
+            try:
+                caption = await rt.ig.media_caption(ev.media_id)
+            except Exception:
+                caption = ""
+        note = f"[комментарий под публикацией] {ev.text}"
+        if caption:
+            note += f"\n[подпись к этой публикации: «{caption[:400]}»]"
+        if not await self._db(self.store.add_message, key, "user", note, mid, True):
             return
         if kind == "negative":
             log.warning("Негативный комментарий @%s (%s): %s", ev.username, rt.branch.city, ev.text[:200])
