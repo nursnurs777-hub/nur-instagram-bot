@@ -93,6 +93,10 @@ def _render_user_text(ev: Event) -> str:
     return " ".join(parts).strip()
 
 
+# Вложения, которые может отправить живой менеджер (остальное — служебные карточки Instagram)
+REAL_ATTACHMENTS = {"image", "video", "audio", "file", "share", "ig_reel", "reel", "story_mention", "animated_image"}
+
+
 class Processor:
     def __init__(self, settings: Settings, store: Store, ig: InstagramClient, agent: SalesAgent,
                  catalogs: CatalogProvider, runtimes: list[BranchRuntime] | None = None):
@@ -284,7 +288,19 @@ class Processor:
             return
         now = utcnow()
         conv = await self._db(self.store.get_conv, key)
-        if self._is_automation(ev, conv, received_at):
+        # Пустое исходящее без текста и обычных вложений — служебная карточка Instagram
+        # («Благодарим за ваш отзыв» после рекламы), а не ответ менеджера
+        if not (ev.text or "").strip() and not any(a.type in REAL_ATTACHMENTS for a in ev.attachments):
+            log.info("Служебное пустое сообщение в диалоге %s — пропускаем", key)
+            return
+        known = any((ev.text or "").strip().lower().startswith(t) for t in self.s.automation_texts)
+        if not known and self._is_automation(ev, conv, received_at):
+            # Быстрый незнакомый автоответ: без паузы, вопрос клиента бот всё равно обработает
+            await self._db(self.store.add_message, key, "manager",
+                           "[автоответ] " + (_render_user_text(ev) or "[вложение]"), ev.mid)
+            log.info("Быстрый автоответ в диалоге %s — бот не встаёт на паузу", key)
+            return
+        if known:
             # Автоответ уже ответил на вопрос клиента: в историю, но без паузы — следующее сообщение клиента
             # бот подхватит сразу
             await self._db(self.store.add_message, key, "manager",
@@ -444,6 +460,16 @@ class Processor:
         content = content.replace(placeholder, note, 1) if placeholder in content else f"{note} {content}"
         self.store.update_message_content(msg_id, content)
 
+    async def recover_stuck(self, now) -> int:
+        """Клиент написал, а бот промолчал из-за служебной карточки, принятой за менеджера, — отвечаем."""
+        stuck = await self._db(self.store.convs_stuck, now, timedelta(hours=self.s.window_hours))
+        for key, ids in stuck:
+            await self._db(self.store.mark_unprocessed, ids)
+            await self._db(self.store.update_conv, key, paused_until=None)
+            log.warning("Неотвеченное сообщение в диалоге %s — отвечаем", key)
+            self._spawn(self.process_user(key))
+        return len(stuck)
+
     async def reconcile(self, now, since: timedelta) -> int:
         """Догружает сообщения клиентов, которые Instagram не прислал вебхуком, и отвечает на них."""
         keys = await self._db(self.store.convs_to_reconcile, now, since, timedelta(hours=self.s.window_hours))
@@ -503,6 +529,8 @@ class Processor:
             self._last_reconcile = now
             # при старте смотрим всё 23-часовое окно, дальше — последние 3 часа
             since = timedelta(hours=self.s.window_hours) if first else timedelta(hours=3)
+            if first:
+                await self.recover_stuck(now)
             await self.reconcile(now, since)
 
         if self.s.followup_enabled:

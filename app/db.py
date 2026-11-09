@@ -175,6 +175,36 @@ class Store:
                 out.append(uid)
             return out
 
+    def mark_unprocessed(self, ids: list[int]) -> None:
+        if not ids:
+            return
+        with self.engine.begin() as c:
+            c.execute(update(messages).where(messages.c.id.in_(ids)).values(processed=False))
+
+    def convs_stuck(self, now: datetime, window: timedelta) -> list[tuple[str, list[int]]]:
+        """Диалоги, где последним по сути писал клиент (после него — только пустые служебные «ответы»),
+        а бот не ответил."""
+        noise = {"", "[вложение]"}
+        out = []
+        with self.engine.begin() as c:
+            rows = c.execute(select(conversations.c.user_id).where(
+                conversations.c.manual_mode.is_(False), conversations.c.opted_out.is_(False),
+                conversations.c.last_user_at.is_not(None), conversations.c.last_user_at >= now - window)).all()
+            for (uid,) in rows:
+                hist = c.execute(select(messages.c.id, messages.c.role, messages.c.content, messages.c.processed)
+                                 .where(messages.c.user_id == uid).order_by(messages.c.id.desc()).limit(10)).all()
+                i = 0
+                while i < len(hist) and hist[i][1] == "manager" and (hist[i][2] or "").strip() in noise:
+                    i += 1
+                if i == 0 or i >= len(hist) or hist[i][1] != "user":
+                    continue  # после клиента нет пустых «ответов» — это не наш случай
+                ids = []
+                while i < len(hist) and hist[i][1] == "user":
+                    ids.append(hist[i][0])
+                    i += 1
+                out.append((uid, ids))
+        return out
+
     def convs_to_reconcile(self, now: datetime, since: timedelta, window: timedelta) -> list[str]:
         """Диалоги, где последним писал не клиент, но недавно (клиент мог написать, а вебхук не дошёл)."""
         with self.engine.begin() as c:

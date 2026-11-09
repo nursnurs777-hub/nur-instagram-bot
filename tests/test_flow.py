@@ -348,7 +348,8 @@ def test_followup_default_hours():
 
 def test_fast_automation_echo_does_not_pause(tmp_path):
     async def go():
-        proc, ig, agent = make(tmp_path, automation_echo_seconds=6, debounce_seconds=0.3)
+        proc, ig, agent = make(tmp_path, automation_echo_seconds=6, debounce_seconds=0.3,
+                               automation_texts=["иә, қалған соманы"])
         await proc.handle_event(msg("a", "0•0•24 бар ма?"))
         await proc.handle_event(echo("auto-1", "Иә, қалған соманы бөліп төлеуге болады. Қай модель?"))
         await settle(proc, 0.5)
@@ -403,4 +404,37 @@ def test_reconcile_picks_up_missed_message(tmp_path):
         assert n == 1 and len(ig.sent) == 2 and "18 pro max 256" in ig.sent[1][1]
         # повторная проверка ничего не дублирует
         assert await proc.reconcile(utcnow(), timedelta(hours=3)) == 0
+    asyncio.run(go())
+
+
+
+def test_empty_service_echo_ignored(tmp_path):
+    """Карточка «Благодарим за ваш отзыв» приходит пустым echo — бот должен ответить клиенту."""
+    async def go():
+        proc, ig, _ = make(tmp_path, debounce_seconds=0.3)
+        await proc.handle_event(msg("a", "18 про Макс голубой"))
+        await proc.handle_event(echo("card-1", ""))
+        await settle(proc, 0.6)
+        assert proc.store.get_conv("U1")["paused_until"] is None
+        assert len(ig.sent) == 1 and "голубой" in ig.sent[0][1]
+    asyncio.run(go())
+
+
+def test_recover_stuck_after_service_card(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path)
+        # так выглядело в базе до исправления: клиент → пустой «ответ менеджера», клиент обработан, бот молчал
+        proc.store.get_conv("U1")
+        proc.store.add_message("U1", "user", "12 айфон 128 гб 80 емкост", "u-1", True)
+        proc.store.add_message("U1", "manager", "[вложение]", "card-2")
+        proc.store.update_conv("U1", last_user_at=utcnow(), paused_until=utcnow() + timedelta(minutes=5))
+        n = await proc.recover_stuck(utcnow())
+        await settle(proc)
+        assert n == 1 and len(ig.sent) == 1 and "12 айфон" in ig.sent[0][1]
+        # живой ответ менеджера не трогаем
+        proc.store.get_conv("U2")
+        proc.store.add_message("U2", "user", "скидка?", "u-2", True)
+        proc.store.add_message("U2", "manager", "50-60 шамасында", "mgr-2")
+        proc.store.update_conv("U2", last_user_at=utcnow())
+        assert await proc.recover_stuck(utcnow()) == 0
     asyncio.run(go())
