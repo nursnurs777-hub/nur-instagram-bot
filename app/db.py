@@ -257,6 +257,45 @@ class Store:
                     out.append(uid)
             return out
 
+    def daily_stats(self, now: datetime, since: timedelta) -> dict:
+        """Сводка за период для отчёта владельцу; ключи диалогов Шымкента начинаются с «shymkent:»."""
+        start = now - since
+        out = {"astana": {"clients": 0, "messages": 0, "bot": 0, "manager": 0}, "shymkent": None,
+               "unanswered": []}
+        with self.engine.begin() as c:
+            rows = c.execute(select(messages.c.user_id, messages.c.role, messages.c.content)
+                             .where(messages.c.created_at >= start)).all()
+            branches: dict[str, dict] = {}
+            clients: dict[str, set] = {}
+            for uid, role, content in rows:
+                if uid.startswith("web-test:"):
+                    continue
+                b = uid.split(":", 1)[0] if ":" in uid else "astana"
+                d = branches.setdefault(b, {"clients": 0, "messages": 0, "bot": 0, "manager": 0})
+                text = (content or "").strip()
+                if role == "user":
+                    d["messages"] += 1
+                    clients.setdefault(b, set()).add(uid)
+                elif role == "assistant" and text:
+                    d["bot"] += 1
+                elif role == "manager" and not _is_noise(text) and not text.startswith("[автоответ]"):
+                    d["manager"] += 1
+            for b, d in branches.items():
+                d["clients"] = len(clients.get(b, ()))
+            out.update(branches)
+            # кто сейчас без ответа: последнее содержательное сообщение — от клиента, старше 10 минут
+            convs = c.execute(select(conversations.c.user_id).where(
+                conversations.c.manual_mode.is_(False), conversations.c.last_user_at >= start)).all()
+            for (uid,) in convs:
+                if uid.startswith("web-test:"):
+                    continue
+                hist = c.execute(select(messages.c.role, messages.c.content, messages.c.created_at)
+                                 .where(messages.c.user_id == uid).order_by(messages.c.id.desc()).limit(8)).all()
+                hist = [h for h in hist if not (h[0] == "manager" and _is_noise(h[1]))]
+                if hist and hist[0][0] == "user" and hist[0][2] <= now - timedelta(minutes=10):
+                    out["unanswered"].append((uid, (hist[0][1] or "")[:60], hist[0][2]))
+        return out
+
     def stats(self) -> dict:
         with self.engine.begin() as c:
             return {

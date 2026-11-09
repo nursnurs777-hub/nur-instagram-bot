@@ -117,6 +117,7 @@ class Settings:
     # окно для повторных касаний (по местному времени): с 9:00 до 22:00
     followup_hour_start: int = field(default_factory=lambda: _int("FOLLOWUP_HOUR_START", 9))
     followup_hour_end: int = field(default_factory=lambda: _int("FOLLOWUP_HOUR_END", 22))
+    report_hour: int = field(default_factory=lambda: _int("REPORT_HOUR", 9))  # ежедневный отчёт в Телеграм
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Asia/Almaty"))
 
     admin_token: str = field(default_factory=lambda: _env("ADMIN_TOKEN"))

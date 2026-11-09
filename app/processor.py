@@ -115,6 +115,8 @@ class Processor:
         self._own_accounts: dict[str, bool] = {}  # key -> собеседник это наш же филиал
         self._reply_times: dict[str, list] = {}
         self._last_reconcile = None
+        self.notifier = None  # TelegramNotifier, если задан TELEGRAM_BOT_TOKEN
+        self._last_report_day = None
         self._followup_tried: dict[str, object] = {}
         self._recovered: dict[str, object] = {}  # key -> когда последний раз чинили диалог
         self._debounce: dict[str, asyncio.Task] = {}
@@ -504,6 +506,45 @@ class Processor:
             self._spawn(self.process_user(key))
         return len(stuck)
 
+    async def _maybe_daily_report(self, now) -> None:
+        """Каждый день в 9:00 по местному времени — сводка за сутки в Телеграм."""
+        if not self.notifier or not self.notifier.chat_ids:
+            return
+        local = datetime.now(ZoneInfo(self.s.timezone))
+        if local.hour != self.s.report_hour or self._last_report_day == local.date():
+            return
+        self._last_report_day = local.date()
+        await self.send_report(now)
+
+    async def send_report(self, now) -> None:
+        st = await self._db(self.store.daily_stats, now, timedelta(hours=24))
+        tz = ZoneInfo(self.s.timezone)
+        names = {"astana": "Астана", "shymkent": "Шымкент"}
+        lines = ["📊 Отчёт ИИ-бота за сутки"]
+        for key in ("astana", "shymkent"):
+            d = st.get(key)
+            if d:
+                lines.append(f"{names[key]}: клиентов {d['clients']}, сообщений {d['messages']}, "
+                             f"ответов бота {d['bot']}, ответов менеджера {d['manager']}")
+        c = self.notifier.counters
+        lines.append(f"Напоминаний клиентам: {c.get('followups', 0)}. "
+                     f"Бот сам нашёл и ответил пропущенным: {c.get('recovered', 0)}.")
+        problems = c.get("errors", 0) + c.get("send_failed", 0) + c.get("sfon", 0) + c.get("loops", 0)
+        lines.append("Сбоев не было." if not problems else
+                     f"Сбоев: {problems} (ошибки ИИ {c.get('errors', 0)}, не отправлено {c.get('send_failed', 0)}, "
+                     f"склад {c.get('sfon', 0)}).")
+        un = st["unanswered"]
+        if not un:
+            lines.append("✅ Клиентов без ответа нет.")
+        else:
+            lines.append(f"❗ Без ответа сейчас: {len(un)}")
+            for uid, text, at in un[:10]:
+                t = at.replace(tzinfo=timezone.utc).astimezone(tz).strftime("%d.%m %H:%M")
+                branch = names.get(uid.split(":")[0], "Астана") if ":" in uid else "Астана"
+                lines.append(f"• {branch}, {t}: «{text}»")
+        self.notifier.counters.clear()
+        self.notifier.notify("\n".join(lines), dedupe=False)
+
     async def reconcile(self, now, since: timedelta) -> int:
         """Догружает сообщения клиентов, которые Instagram не прислал вебхуком, и отвечает на них."""
         keys = await self._db(self.store.convs_to_reconcile, now, since, timedelta(hours=self.s.window_hours))
@@ -566,6 +607,8 @@ class Processor:
             await self.recover_stuck(now)
             await self.recover_unanswered(now)
             await self.reconcile(now, since)
+
+        await self._maybe_daily_report(now)
 
         if self.s.followup_enabled:
             local = datetime.now(ZoneInfo(self.s.timezone))

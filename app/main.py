@@ -16,6 +16,7 @@ from .config import settings
 from .db import Store
 from .instagram import InstagramClient, parse_events, verify_signature
 from .processor import BranchRuntime, Processor
+from .telegram import TelegramLogHandler, TelegramNotifier
 from .sheets import CatalogProvider
 from .stock import StockService
 from .testchat import router as testchat_router
@@ -66,9 +67,22 @@ async def lifespan(app: FastAPI):
             log.exception("Каталог не загрузился при старте — повторим при первом сообщении")
     log.info("Наличие SFON: %s", ", ".join(s.branch_key for s in stocks) or "не подключено")
     reports = [asyncio.create_task(s.startup_report()) for s in stocks]  # не задерживаем запуск
+    notifier = TelegramNotifier.from_env()
+    tg_task = None
+    if notifier:
+        logging.getLogger().addHandler(TelegramLogHandler(notifier))
+        proc.notifier = notifier
+        tg_task = asyncio.create_task(notifier.run())
+        log.info("Телеграм-уведомления: %s", "чат задан" if notifier.chat_ids else "ждём, куда добавят бота")
+        if notifier.chat_ids:
+            notifier.notify("✅ ИИ-бот NUR запущен. Сюда будут приходить тревоги о сбоях и отчёт каждый день в "
+                            f"{settings.report_hour}:00.", dedupe=False)
     sched = asyncio.create_task(proc.scheduler())
     yield
     sched.cancel()
+    if tg_task:
+        tg_task.cancel()
+        await notifier.aclose()
     for t in reports:
         t.cancel()
     for s in stocks:
