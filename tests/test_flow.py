@@ -463,3 +463,22 @@ def test_recover_stuck_after_fallback():
     st.add_message("U3", "assistant", "Извините, сейчас не получается ответить автоматически. Напишите…", "b-3")
     st.update_conv("U3", last_user_at=utcnow())
     assert st.convs_stuck(utcnow(), timedelta(hours=23))[0][0] == "U3"
+
+
+
+def test_recover_unanswered_and_no_loop(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path)
+        proc.store.get_conv("U4")
+        mid = proc.store.add_message("U4", "user", "есть 17 про?", "u-4", False)
+        from sqlalchemy import update as upd
+        from app.db import messages as mt
+        with proc.store.engine.begin() as c:
+            c.execute(upd(mt).where(mt.c.id == mid).values(created_at=utcnow() - timedelta(minutes=10)))
+        proc.store.update_conv("U4", last_user_at=utcnow() - timedelta(minutes=10))
+        assert await proc.recover_unanswered(utcnow()) == 1
+        await settle(proc)
+        assert len(ig.sent) == 1
+        # второй раз в течение часа тот же диалог не трогаем
+        assert await proc.recover_unanswered(utcnow()) == 0
+    asyncio.run(go())

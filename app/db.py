@@ -216,6 +216,18 @@ class Store:
                 out.append((uid, ids))
         return out
 
+    def convs_unanswered(self, now: datetime, older_than: timedelta, window: timedelta) -> list[str]:
+        """Есть необработанные сообщения клиента старше older_than, бот не на паузе и не в ручном режиме."""
+        with self.engine.begin() as c:
+            pending = select(messages.c.user_id).where(
+                messages.c.role == "user", messages.c.processed.is_(False),
+                messages.c.created_at <= now - older_than, messages.c.created_at >= now - window).distinct()
+            rows = c.execute(select(conversations.c.user_id).where(
+                conversations.c.manual_mode.is_(False), conversations.c.opted_out.is_(False),
+                (conversations.c.paused_until.is_(None)) | (conversations.c.paused_until <= now),
+                conversations.c.user_id.in_(pending))).all()
+            return [r[0] for r in rows]
+
     def convs_to_reconcile(self, now: datetime, since: timedelta, window: timedelta) -> list[str]:
         """Диалоги, где последним писал не клиент, но недавно (клиент мог написать, а вебхук не дошёл)."""
         with self.engine.begin() as c:

@@ -111,6 +111,7 @@ class Processor:
         self._own_accounts: dict[str, bool] = {}  # key -> собеседник это наш же филиал
         self._reply_times: dict[str, list] = {}
         self._last_reconcile = None
+        self._recovered: dict[str, object] = {}  # key -> когда последний раз чинили диалог
         self._debounce: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         # фото ждут обработки: (id сообщения в БД, ссылка Instagram). Ссылки живут только в памяти.
@@ -460,9 +461,32 @@ class Processor:
         content = content.replace(placeholder, note, 1) if placeholder in content else f"{note} {content}"
         self.store.update_message_content(msg_id, content)
 
+    def _may_recover(self, key: str, now) -> bool:
+        """Один диалог чиним не чаще раза в час — чтобы при сбое ИИ не слать «Извините…» по кругу."""
+        last = self._recovered.get(key)
+        if last and (now - last).total_seconds() < 3600:
+            return False
+        self._recovered[key] = now
+        return True
+
+    async def recover_unanswered(self, now) -> int:
+        """Сообщение клиента лежит необработанным дольше 3 минут (бот не на паузе) — отвечаем."""
+        keys = await self._db(self.store.convs_unanswered, now, timedelta(minutes=3),
+                              timedelta(hours=self.s.window_hours))
+        n = 0
+        for key in keys:
+            t = self._debounce.get(key)
+            if (t and not t.done()) or self._lock(key).locked() or not self._may_recover(key, now):
+                continue
+            log.warning("Неотвеченное сообщение в диалоге %s (висело без ответа) — отвечаем", key)
+            self._spawn(self.process_user(key))
+            n += 1
+        return n
+
     async def recover_stuck(self, now) -> int:
         """Клиент написал, а бот промолчал из-за служебной карточки, принятой за менеджера, — отвечаем."""
         stuck = await self._db(self.store.convs_stuck, now, timedelta(hours=self.s.window_hours))
+        stuck = [(k, ids) for k, ids in stuck if self._may_recover(k, now)]
         for key, ids in stuck:
             await self._db(self.store.mark_unprocessed, ids)
             await self._db(self.store.update_conv, key, paused_until=None)
@@ -529,8 +553,8 @@ class Processor:
             self._last_reconcile = now
             # при старте смотрим всё 23-часовое окно, дальше — последние 3 часа
             since = timedelta(hours=self.s.window_hours) if first else timedelta(hours=3)
-            if first:
-                await self.recover_stuck(now)
+            await self.recover_stuck(now)
+            await self.recover_unanswered(now)
             await self.reconcile(now, since)
 
         if self.s.followup_enabled:
