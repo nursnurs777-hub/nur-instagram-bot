@@ -436,10 +436,11 @@ class Processor:
                 extra_note = "[служебное событие: клиент не ответил — это единственное напоминание]"
 
             if self._loop_guard(user_id):
-                log.warning("Зацикливание с %s: %d ответов за 10 мин — пауза на час", user_id,
+                log.warning("Зацикливание с %s: %d ответов за 10 мин — пауза 30 мин", user_id,
                             len(self._reply_times[user_id]))
-                await self._db(self.store.update_conv, user_id, paused_until=utcnow() + timedelta(hours=1))
-                await self._db(self.store.mark_processed, [m["id"] for m in pending])
+                # сообщения не помечаем обработанными: после паузы бот ответит на них сам
+                await self._db(self.store.update_conv, user_id, paused_until=utcnow() + timedelta(minutes=30))
+                self._reply_times[user_id] = []
                 return
 
             await rt.ig.typing(igsid, True)
@@ -583,35 +584,9 @@ class Processor:
 
     async def send_report(self, now) -> None:
         st = await self._db(self.store.daily_stats, now, timedelta(hours=24))
-        tz = ZoneInfo(self.s.timezone)
-        names = {"astana": "Астана", "shymkent": "Шымкент"}
-        lines = ["📊 Отчёт ИИ-бота за сутки",
-                 f"Написали клиентов: {st['total_clients']}, ответили: {st['answered_clients']}, "
-                 f"без ответа: {len(st['unanswered'])}"]
-        for key in ("astana", "shymkent"):
-            d = st.get(key)
-            if d:
-                lines.append(f"{names[key]}: клиентов {d['clients']}, сообщений {d['messages']}, "
-                             f"ответов бота {d['bot']}, ответов менеджера {d['manager']}")
-        c = self.notifier.counters
-        lines.append(f"Ответов на комментарии: {c.get('comments', 0)}, негативных: {c.get('negative', 0)}.")
-        lines.append(f"Напоминаний клиентам: {c.get('followups', 0)}. "
-                     f"Бот сам нашёл и ответил пропущенным: {c.get('recovered', 0)}.")
-        problems = c.get("errors", 0) + c.get("send_failed", 0) + c.get("sfon", 0) + c.get("loops", 0)
-        lines.append("Сбоев не было." if not problems else
-                     f"Сбоев: {problems} (ошибки ИИ {c.get('errors', 0)}, не отправлено {c.get('send_failed', 0)}, "
-                     f"склад {c.get('sfon', 0)}).")
-        un = st["unanswered"]
-        if not un:
-            lines.append("✅ Клиентов без ответа нет.")
-        else:
-            lines.append(f"❗ Без ответа сейчас: {len(un)}")
-            for uid, text, at in un[:10]:
-                t = at.replace(tzinfo=timezone.utc).astimezone(tz).strftime("%d.%m %H:%M")
-                branch = names.get(uid.split(":")[0], "Астана") if ":" in uid else "Астана"
-                lines.append(f"• {branch}, {t}: «{text}»")
+        text = format_report(st, dict(self.notifier.counters), ZoneInfo(self.s.timezone), now)
         self.notifier.counters.clear()
-        self.notifier.notify("\n".join(lines), dedupe=False)
+        self.notifier.notify(text, dedupe=False, html=True)
 
     async def reconcile(self, now, since: timedelta) -> int:
         """Догружает сообщения клиентов, которые Instagram не прислал вебхуком, и отвечает на них."""
@@ -700,3 +675,55 @@ class Processor:
                     self._followup_tried[uid] = now
                     log.info("Повторное касание для %s", uid)
                     self._spawn(self.process_user(uid, followup=True))
+
+
+BRANCH_NAMES = {"astana": "Астана", "shymkent": "Шымкент"}
+
+
+def format_report(st: dict, c: dict, tz, now) -> str:
+    """Ежедневный отчёт для Телеграма (HTML): короткие блоки, главное — жирным."""
+    from html import escape
+
+    def local(dt):
+        return dt.replace(tzinfo=timezone.utc).astimezone(tz)
+
+    end = local(now)
+    start = end - timedelta(hours=24)
+    un = st["unanswered"]
+    out = [f"📊 <b>Отчёт ИИ-бота</b>",
+           f"<i>{start:%d.%m %H:%M} — {end:%d.%m %H:%M}</i>",
+           "",
+           f"👥 Написали: <b>{st['total_clients']}</b>  ·  ответили: <b>{st['answered_clients']}</b>"
+           + (f"  ·  без ответа: <b>{len(un)}</b>" if un else "")]
+    for key in ("astana", "shymkent"):
+        d = st.get(key)
+        if not d:
+            continue
+        out += ["", f"📍 <b>{BRANCH_NAMES[key]}</b>",
+                f"клиентов {d['clients']}  ·  сообщений {d['messages']}",
+                f"ответил бот {d['bot']}  ·  менеджер {d['manager']}"]
+    out += ["", "🤖 <b>Работа бота</b>",
+            f"напоминаний клиентам: {c.get('followups', 0)}",
+            f"сам нашёл и ответил пропущенным: {c.get('recovered', 0)}",
+            f"ответов на комментарии: {c.get('comments', 0)}"
+            + (f"  ·  негативных: <b>{c['negative']}</b>" if c.get("negative") else "")]
+    kinds = [("errors", "ИИ не смог ответить"), ("send_failed", "не отправилось в Instagram"),
+             ("sfon", "склад SFON недоступен"), ("loops", "пауза из-за слишком частых ответов")]
+    problems = [(label, c.get(k, 0)) for k, label in kinds if c.get(k)]
+    out.append("")
+    if problems:
+        out.append(f"⚠️ <b>Сбои: {sum(n for _, n in problems)}</b>")
+        out += [f"• {label}: {n}" for label, n in problems]
+    else:
+        out.append("✅ Сбоев не было")
+    out.append("")
+    if not un:
+        out.append("✅ Клиентов без ответа нет")
+    else:
+        out.append(f"❗ <b>Без ответа: {len(un)}</b> — ответьте вручную")
+        for uid, text, at in un[:10]:
+            branch = BRANCH_NAMES.get(uid.split(":")[0], "Астана") if ":" in uid else "Астана"
+            out.append(f"• {branch}, {local(at):%d.%m %H:%M} — «{escape(text)}»")
+        if len(un) > 10:
+            out.append(f"…и ещё {len(un) - 10}")
+    return "\n".join(out)

@@ -25,7 +25,8 @@ ALERTS: list[tuple[re.Pattern, str | None, str]] = [
     (re.compile(r"\[(\w+)\] SFON недоступен"),
      "⚠️ Склад SFON ({0}) недоступен — бот отправляет уточнять наличие к менеджеру.", "sfon"),
     (re.compile(r"Зацикливание с (\S+)"),
-     "⚠️ Бот слишком часто отвечал {0} — поставлен на паузу на час.", "loops"),
+     "⚠️ Бот слишком часто отвечал {0} — диалог на паузе 30 минут, потом бот ответит сам. "
+     "Если это живой клиент — можно ответить вручную.", "loops"),
     (re.compile(r"Ошибка планировщика"), "⚠️ Ошибка во фоновой проверке бота (см. логи Render).", "errors"),
     (re.compile(r"не удалось проверить маркер Instagram"),
      "⚠️ Не проверяется доступ к Instagram — возможно, истёк токен.", "errors"),
@@ -64,20 +65,22 @@ class TelegramNotifier:
         return f"https://api.telegram.org/bot{self.token}"
 
     # -------------------------------------------------------------- отправка
-    def notify(self, text: str, dedupe: bool = True) -> None:
+    def notify(self, text: str, dedupe: bool = True, html: bool = False) -> None:
         now = time.monotonic()
         if dedupe:
             last = self._recent.get(text)
             if last and now - last < 1800:
                 return
             self._recent[text] = now
-        self._queue.put_nowait(text)
+        self._queue.put_nowait((text, html))
 
-    async def _send(self, text: str) -> None:
+    async def _send(self, text: str, html: bool = False) -> None:
         for chat in self.chat_ids:
             try:
-                r = await self.http.post(f"{self.api}/sendMessage",
-                                         json={"chat_id": chat, "text": text[:4000], "disable_web_page_preview": True})
+                body = {"chat_id": chat, "text": text[:4000], "disable_web_page_preview": True}
+                if html:
+                    body["parse_mode"] = "HTML"
+                r = await self.http.post(f"{self.api}/sendMessage", json=body)
                 if r.status_code >= 400:
                     log.info("Телеграм: не отправлено в %s: %s", chat, r.text[:200])
             except Exception as e:
@@ -89,8 +92,8 @@ class TelegramNotifier:
         while True:
             try:
                 if self.chat_ids:
-                    text = await asyncio.wait_for(self._queue.get(), timeout=60)
-                    await self._send(text)
+                    text, html = await asyncio.wait_for(self._queue.get(), timeout=60)
+                    await self._send(text, html)
                     await asyncio.sleep(1)
                 else:
                     if time.monotonic() - last_poll > 60:

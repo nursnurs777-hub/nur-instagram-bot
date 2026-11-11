@@ -18,7 +18,7 @@ def test_log_handler_alerts_and_counters():
     lg.warning("Неотвеченное сообщение в диалоге 77 — отвечаем")
     lg.removeHandler(h)
     assert n._queue.qsize() == 1
-    assert "Извините" in n._queue.get_nowait()
+    assert "Извините" in n._queue.get_nowait()[0]
     assert n.counters == {"errors": 2, "followups": 1, "recovered": 1}
 
 
@@ -47,3 +47,19 @@ def test_token_hidden_from_logs():
     assert f.filter(rec) is False
     rec2 = lg.LogRecord("httpx", lg.INFO, "", 0, "GET https://graph.instagram.com/v23.0/me", None, None)
     assert f.filter(rec2) is True
+
+
+def test_report_format_html():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.processor import format_report
+    now = datetime(2026, 11, 11, 4, 0)
+    st = {"total_clients": 90, "answered_clients": 88,
+          "astana": {"clients": 33, "messages": 129, "bot": 125, "manager": 1},
+          "shymkent": {"clients": 57, "messages": 347, "bot": 293, "manager": 0},
+          "unanswered": [("shymkent:1", "серый <b>", datetime(2026, 11, 10, 9, 44))]}
+    t = format_report(st, {"loops": 4, "comments": 1, "negative": 1, "followups": 88, "recovered": 3},
+                      ZoneInfo("Asia/Almaty"), now)
+    assert "<b>Сбои: 4</b>" in t and "пауза из-за слишком частых ответов: 4" in t
+    assert "Шымкент, 10.11 14:44 — «серый &lt;b&gt;»" in t and "10.11 09:00 — 11.11 09:00" in t
+    print(t)
