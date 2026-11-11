@@ -180,6 +180,27 @@ _DISCONTINUED_RX = re.compile(r"(?<![0-9])(13|14|15|16) ?pro( ?max)?(?![a-z])")
 _OTHER_DEVICES = ("macbook", "ipad", "watch", "airpods", "samsung", "galaxy")
 
 
+def _mem_gb(mem: str | None) -> int:
+    m = re.match(r"(\d+)\s*(tb|gb)", (mem or "").lower())
+    if not m:
+        return 10**9
+    return int(m.group(1)) * (1024 if m.group(2) == "tb" else 1)
+
+
+def _pick_memory(items: list, memory: str | None) -> tuple[list, str | None]:
+    """Память указана — оставляем её; не указана — берём минимальную и говорим, какие ещё есть."""
+    if memory:
+        want = normalize_memory(memory)
+        return [p for p in items if p.memory == want or not p.memory], None
+    mems = sorted({p.memory for p in items if p.memory}, key=_mem_gb)
+    if len(mems) <= 1:
+        return items, None
+    base = mems[0]
+    others = ", ".join(m.replace("GB", " ГБ").replace("TB", " ТБ") for m in mems[1:])
+    return ([p for p in items if p.memory == base],
+            f"Посчитано за {base.replace('GB', ' ГБ').replace('TB', ' ТБ')}; есть также {others} — назови это одной фразой.")
+
+
 _OLD_IPHONE_RX = re.compile(r"(?<![0-9])(6|7|8|x|xr|xs|11|12|se)(?![0-9a-z])")
 
 
@@ -374,8 +395,8 @@ class ToolExecutor:
 
     async def _a_calculate_tradein_topup(self, used_product_id: int | None = None, **kw) -> dict:
         if not used_product_id:
-            if not kw.get("new_model") or not kw.get("new_memory"):
-                return {"error": "Укажи модель и память нового телефона (или used_product_id для б/у)."}
+            if not kw.get("new_model"):
+                return {"error": "Укажи модель нового телефона (или used_product_id для б/у)."}
             return self._t_calculate_tradein_topup(**kw)
         saved = self.state.get("tradein")
         if not saved:
@@ -501,7 +522,7 @@ class ToolExecutor:
                                    "из by_sim одним сообщением. Если клиент сам уточнит SIM, пересчитай с sim.")
         return out
 
-    def _t_calculate_tradein_topup(self, new_model: str, new_memory: str, new_sim: str | None = None,
+    def _t_calculate_tradein_topup(self, new_model: str, new_memory: str | None = None, new_sim: str | None = None,
                                    new_color: str | None = None) -> dict:
         saved = self.state.get("tradein")
         if not saved:
@@ -513,11 +534,26 @@ class ToolExecutor:
         items, _ = self.catalog.find_exact(new_model, new_memory, new_sim, new_color)
         if (upcoming := upcoming_model(new_model)) and _upcoming_unpriced(upcoming, items):
             return _upcoming_info(upcoming)
-        items = [p for p in items if normalize_memory(new_memory) == p.memory]
+        items, memory_note = _pick_memory(items, new_memory)
         if new_sim:
             items = [p for p in items if p.sim in (normalize_sim(new_sim), None)]
         if not items:
             return {"error": "Новый телефон в такой конфигурации не найден в прайсе — доплату не называй."}
+        sims = {p.sim for p in items}
+        if len(items) > 1 and len(sims) > 1:
+            # SIM не спрашиваем: считаем доплату сразу для каждой версии
+            priced = [p for p in sorted(items, key=lambda p: -(p.price or 0)) if p.price is not None]
+            if not priced:
+                return {"error": "Цена нового телефона в прайсе не указана — доплату не называй."}
+            variants = [self._topup_for(p.label(), p.price, saved) for p in priced]
+            self.state["last_topup"] = {"variants": [
+                {"new_device": p.label(), "new_price": p.price, "tradein_estimate": saved["estimate"],
+                 "topup": topup(p.price, saved["estimate"])["topup"]} for p in priced]}
+            return {"by_new_sim": [{"sim": SIM_LABELS.get(p.sim or "", p.sim), **v}
+                                   for p, v in zip(priced, variants)],
+                    **({"memory_note": memory_note} if memory_note else {}),
+                    "note": ("Назови доплату сразу для каждой версии SIM из by_new_sim, не спрашивая SIM. "
+                             "Доплата предварительная: оценка старого телефона подтверждается после осмотра.")}
         if len(items) > 1:
             by_color = len({p.sim for p in items}) == 1 and any(p.color for p in items)
             return {"status": "need_color" if by_color else "need_sim",
@@ -527,7 +563,10 @@ class ToolExecutor:
         new = items[0]
         if new.price is None:
             return {"error": "Цена нового телефона в прайсе не указана — доплату не называй, предложи уточнить у менеджера."}
-        return self._topup_for(new.label(), new.price, saved)
+        res = self._topup_for(new.label(), new.price, saved)
+        if memory_note:
+            res["memory_note"] = memory_note
+        return res
 
 
     def _topup_for(self, label: str, price: int, saved: dict) -> dict:
@@ -566,6 +605,12 @@ class ToolExecutor:
             lt = self.state.get("last_topup")
             if not lt:
                 return {"error": "Доплата по Trade-in ещё не рассчитана — сначала calculate_tradein_topup."}
+            if lt.get("variants"):
+                out = []
+                for v in lt["variants"]:
+                    c = installment(v["topup"], self.kaspi_markup, months)
+                    out.append({"basis": f"доплата за {v['new_device']} с Trade-in", **c, **self._inst_text(c)})
+                return {"by_new_sim": out, "note": "Назови рассрочку для каждой версии. Одобрение — за Kaspi."}
             calc = installment(lt["topup"], self.kaspi_markup, months)
             return {"basis": f"доплата за {lt['new_device']} с Trade-in", **calc, **self._inst_text(calc),
                     "note": "Доплата предварительная; одобрение рассрочки — за Kaspi."}
@@ -576,8 +621,19 @@ class ToolExecutor:
             return _upcoming_info(upcoming)
         if not items:
             return {"error": "Товар не найден в прайсе — сумму не называй."}
+        items, memory_note = _pick_memory(items, memory)
+        if len(items) > 1 and len({p.sim for p in items}) > 1:
+            out = []
+            for p in items:
+                if p.price is None:
+                    continue
+                c = installment(p.price, self.kaspi_markup, months)
+                out.append({"product": p.label(), **c, **self._inst_text(c)})
+            if out:
+                return {"by_sim": out, **({"memory_note": memory_note} if memory_note else {}),
+                        "note": "Назови рассрочку сразу для каждой версии SIM, не спрашивая. Одобрение — за Kaspi."}
         if len(items) > 1:
-            return {"status": "need_details", "note": "Несколько вариантов — уточни память/SIM.",
+            return {"status": "need_details", "note": "Несколько вариантов — уточни память/цвет.",
                     "options": [p.to_tool() for p in items]}
         p = items[0]
         if p.price is None:

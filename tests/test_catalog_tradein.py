@@ -114,7 +114,7 @@ def test_tradein_example_from_prompt(catalog):
 
     # клиент спрашивает доплату — данные старого телефона не передаём
     r2, _ = run(ex, "calculate_tradein_topup", new_model="iPhone 18 Pro Max", new_memory="256")
-    assert r2["status"] == "need_sim"
+    assert len(r2["by_new_sim"]) >= 1 and "status" not in r2  # SIM не спрашиваем — обе версии сразу
     r3, _ = run(ex, "calculate_tradein_topup", new_model="iPhone 18 Pro Max", new_memory="256", new_sim="sim+esim")
     assert r3["topup"] == 830000 - 215000
     assert "615 000" in state_summary(state)
@@ -193,9 +193,9 @@ def test_kaspi_installment_product(catalog):
     assert r["monthly_payment"] == 31500 and r["months"] == 24
 
 
-def test_kaspi_installment_needs_details(catalog):
+def test_kaspi_installment_without_details_gives_both(catalog):
     r, _ = run(ToolExecutor(catalog, {}), "calculate_kaspi_installment", basis="product", model="iPhone 17 Pro")
-    assert r["status"] == "need_details"
+    assert len(r["by_sim"]) == 2 and "memory_note" in r
 
 
 def test_kaspi_installment_topup(catalog):
@@ -309,3 +309,27 @@ def test_tradein_from_13_series(catalog, m, old):
     assert too_old_for_tradein(m) is old
     r, _ = run(ToolExecutor(catalog, {}), "quote_iphone_tradein", model=m, memory="128", battery_percent=90)
     assert (r["status"] == "not_accepted") is old
+
+
+def test_topup_both_sims_without_asking(catalog):
+    state = {}
+    ex = ToolExecutor(catalog, state)
+    run(ex, "quote_iphone_tradein", model="iPhone 15 Pro", memory="256", battery_percent=90)
+    r, _ = run(ex, "calculate_tradein_topup", new_model="iPhone 17 Pro", new_memory="256")
+    assert "by_new_sim" in r and len(r["by_new_sim"]) == 2
+    assert {v["sim"] for v in r["by_new_sim"]} == {"SIM + eSIM", "только eSIM"}
+    inst, _ = run(ex, "calculate_kaspi_installment", basis="tradein_topup")
+    assert len(inst["by_new_sim"]) == 2
+
+
+def test_topup_without_memory_takes_smallest(catalog):
+    ex = ToolExecutor(catalog, {})
+    run(ex, "quote_iphone_tradein", model="iPhone 15 Pro", memory="256", battery_percent=90)
+    r, _ = run(ex, "calculate_tradein_topup", new_model="iPhone 17 Pro")
+    assert "memory_note" in r and "256" in r["memory_note"]
+
+
+def test_installment_both_sims(catalog):
+    r, _ = run(ToolExecutor(catalog, {}), "calculate_kaspi_installment", basis="product", model="iPhone 17 Pro",
+               memory="256")
+    assert len(r["by_sim"]) == 2
