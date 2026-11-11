@@ -70,6 +70,12 @@ async def lifespan(app: FastAPI):
                 log.info("[%s] подписка Instagram: %s", rt.branch.key, ", ".join(fields))
             except Exception as e:
                 log.warning("[%s] Не удалось подписаться на комментарии Instagram: %s", rt.branch.key, e)
+            # standby — переписки, которыми управляет другой инструмент Meta (автоответы рекламы)
+            try:
+                fields = await rt.ig.ensure_subscribed(["standby", "messaging_handover"])
+                log.info("[%s] подписка Instagram (с standby): %s", rt.branch.key, ", ".join(fields))
+            except Exception as e:
+                log.warning("[%s] Подписка на standby не удалась: %s", rt.branch.key, e)
     for prov in providers.values():
         try:
             await prov.get()

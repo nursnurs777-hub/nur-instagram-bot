@@ -630,10 +630,12 @@ class Processor:
             if fn is None:  # без маркера Instagram список просто пустой
                 continue
             try:
-                convs = await fn()
+                convs = await fn(50)
             except Exception as e:
                 log.warning("[%s] Не удалось получить список переписок: %s", rt.branch.key, e)
                 continue
+            waiting = sum(1 for c in convs if c["messages"] and c["messages"][0]["from_id"] not in rt.account_ids)
+            log.info("[%s] переписок в Instagram: %d, последним писал клиент: %d", rt.branch.key, len(convs), waiting)
             for conv in convs:
                 msgs = conv["messages"]
                 if not msgs:
