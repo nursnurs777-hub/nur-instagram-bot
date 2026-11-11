@@ -511,9 +511,12 @@ class ToolExecutor:
             out["estimate_text"] = format_price(result["estimate"])
             if assumed:
                 out["assumed_condition"] = assumed
-                out["say_to_client"] = ("Обязательно скажи, что это цена при условии: " + ", ".join(assumed) + ". "
-                                        "Если что-то не так, сумма может быть ниже — пусть клиент напишет, "
-                                        "и ты пересчитаешь. Отдельно об этом не расспрашивай.")
+                short = [x for x in assumed if x in ("есть коробка", "нет царапин и повреждений")]
+                if short:
+                    out["say_to_client"] = (
+                        "Добавь к сумме ОДНУ короткую оговорку в скобках или после запятой: «если "
+                        + " и ".join(short) + "». Не перечисляй другие условия (ремонт, работу функций) и не "
+                        "расспрашивай о состоянии; если клиент сам напишет о недостатках — пересчитай.")
             if variants:
                 out["by_sim"] = [{"sim": v["sim"], "estimate_text": format_price(v["estimate"])} for v in variants]
                 out.pop("estimate", None)

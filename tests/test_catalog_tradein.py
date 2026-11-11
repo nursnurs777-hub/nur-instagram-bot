@@ -270,7 +270,8 @@ def test_tradein_quick_quote_only_three_fields(catalog):
                  model="iPhone 15 Pro", memory="256", battery_percent=90)
     assert not err and r["status"] == "ok"
     assert r["estimate"] == 230000  # лучший случай, без вычетов
-    assert "есть коробка" in r["say_to_client"] and "нет царапин и повреждений" in r["say_to_client"]
+    assert "«если есть коробка и нет царапин и повреждений»" in r["say_to_client"]
+    assert "ремонт" not in r["say_to_client"].split("Не перечисляй")[0]
     assert "base_price" not in r and "deductions" not in r
     assert state["tradein"]["assumed"]
 
