@@ -135,8 +135,13 @@ async def webhook(request: Request, x_hub_signature_256: str | None = Header(def
     proc: Processor = request.app.state.proc
     for ev in parse_events(payload):
         proc._spawn(proc.handle_event(ev))  # Meta ждёт быстрый 200 — обрабатываем в фоне
-    for cev in parse_comment_events(payload):
+    cevs = parse_comment_events(payload)
+    for cev in cevs:
         proc._spawn(proc.handle_comment(cev))
+    if not cevs and not any(True for _ in parse_events(payload)):
+        # для разбора пропусков: какие поля пришли, если сообщений в них бот не нашёл
+        fields = sorted({k for e in payload.get("entry", []) for k in e.keys()} - {"id", "time"})
+        log.info("Вебхук без сообщений: %s", ", ".join(fields) or "пусто")
     return {"ok": True}
 
 

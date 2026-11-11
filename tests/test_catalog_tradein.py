@@ -299,3 +299,13 @@ def test_tradein_all_details_no_caveat(catalog):
                battery_percent=90, has_box=True, minor_scratches=False, was_repaired=False,
                screen_or_body_damage=False, all_functions_work=True)
     assert r["status"] == "ok" and "say_to_client" not in r
+
+
+@pytest.mark.parametrize("m,old", [("iPhone 12", True), ("айфон 11 про", True), ("iPhone XR", True),
+                                   ("iPhone SE 2022", True), ("iPhone 13", False), ("13 pro max", False),
+                                   ("iPhone 15", False), ("iPhone 17 Pro", False)])
+def test_tradein_from_13_series(catalog, m, old):
+    from app.tools import too_old_for_tradein
+    assert too_old_for_tradein(m) is old
+    r, _ = run(ToolExecutor(catalog, {}), "quote_iphone_tradein", model=m, memory="128", battery_percent=90)
+    assert (r["status"] == "not_accepted") is old

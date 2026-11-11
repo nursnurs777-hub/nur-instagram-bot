@@ -180,6 +180,15 @@ _DISCONTINUED_RX = re.compile(r"(?<![0-9])(13|14|15|16) ?pro( ?max)?(?![a-z])")
 _OTHER_DEVICES = ("macbook", "ipad", "watch", "airpods", "samsung", "galaxy")
 
 
+_OLD_IPHONE_RX = re.compile(r"(?<![0-9])(6|7|8|x|xr|xs|11|12|se)(?![0-9a-z])")
+
+
+def too_old_for_tradein(model: str | None) -> bool:
+    """iPhone 12 и старше (11, X, XR, XS, SE, 8…) в Trade-in не принимаем — только с 13-й серии."""
+    s = norm(model).replace("iphone", " ").replace("айфон", " ")
+    return bool(_OLD_IPHONE_RX.search(s)) and not re.search(r"(?<![0-9])(1[3-9]|2[0-9])(?![0-9])", s)
+
+
 def discontinued_iphone(text: str | None) -> str | None:
     """«айфон 15 про макс» → «iPhone 15 Pro Max»; для остальных запросов — None."""
     s = norm(text)
@@ -414,6 +423,10 @@ class ToolExecutor:
                                 all_functions_work: bool | None = None, sim: str | None = None) -> dict:
         if "samsung" in model.lower() or "galaxy" in model.lower():
             return {"status": "not_accepted", "note": "Samsung в Trade-in не принимается."}
+        if too_old_for_tradein(model):
+            return {"status": "not_accepted",
+                    "note": ("В Trade-in принимаем iPhone начиная с 13-й серии. Вежливо скажи об этом клиенту, оценку "
+                             "не называй. Предложи купить новый iPhone (цены из прайса, рассрочка Kaspi 0-0-24).")}
         items = self.catalog.tradein_lookup(model, memory, sim)
         if not items:
             options = [t.label() for t in self.catalog.tradein_lookup(model)]

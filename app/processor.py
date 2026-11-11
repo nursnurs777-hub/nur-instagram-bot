@@ -621,6 +621,48 @@ class Processor:
                 found += 1
         return found
 
+    async def scan_new_conversations(self, now) -> int:
+        """Смотрит последние переписки в Instagram: если клиент написал, а до бота это не дошло
+        (в т.ч. совсем новый клиент с рекламы), — отвечаем."""
+        found = 0
+        for rt in self.runtimes.values():
+            fn = getattr(rt.ig, "recent_conversations", None)
+            if fn is None:  # без маркера Instagram список просто пустой
+                continue
+            try:
+                convs = await fn()
+            except Exception as e:
+                log.warning("[%s] Не удалось получить список переписок: %s", rt.branch.key, e)
+                continue
+            for conv in convs:
+                msgs = conv["messages"]
+                if not msgs:
+                    continue
+                client = next((p for p in conv["participants"] if p["id"] and p["id"] not in rt.account_ids
+                               and (p.get("username") or "").lower() not in self._own_handles()), None)
+                if not client:
+                    continue
+                uid = client["id"]
+                newest = msgs[0]
+                created = _parse_ig_time(newest["created_time"])
+                # последнее сообщение — от клиента, не старше окна Meta и не совсем свежее (вебхук мог ещё не дойти)
+                if (newest["from_id"] != uid or created is None or created < now - timedelta(hours=self.s.window_hours)
+                        or created > now - timedelta(seconds=90)):
+                    continue
+                key = rt.branch.conv_key(uid)
+                pending = []
+                for m in msgs:  # новые первыми; берём сообщения клиента до первого ответа магазина
+                    if m["from_id"] != uid:
+                        break
+                    if m["id"] and m["text"].strip() and not await self._db(self.store.has_mid, m["id"]):
+                        pending.append(m)
+                for m in reversed(pending):
+                    log.warning("Пропущенное сообщение от %s найдено через API — отвечаем", key)
+                    await self._handle_incoming(Event(kind="message", user_id=uid, account_id="", mid=m["id"],
+                                                      text=m["text"]), key)
+                    found += 1
+        return found
+
     # ------------------------------------------------------------------ планировщик
     async def scheduler(self) -> None:
         while True:
@@ -650,6 +692,7 @@ class Processor:
             await self.recover_stuck(now)
             await self.recover_unanswered(now)
             await self.reconcile(now, since)
+            await self.scan_new_conversations(now)
 
         await self._maybe_daily_report(now)
 

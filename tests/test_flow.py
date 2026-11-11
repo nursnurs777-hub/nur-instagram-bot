@@ -539,3 +539,31 @@ def test_followup_after_bot_answer_without_question(tmp_path):
         await settle(proc)
         assert len(ig.sent) == 1
     asyncio.run(go())
+
+
+def test_standby_messages_are_parsed():
+    from app.instagram import parse_events
+    p = {"object": "instagram", "entry": [{"id": "BIZ", "time": 1, "standby": [
+        {"sender": {"id": "U1"}, "recipient": {"id": "BIZ"}, "timestamp": 1, "message": {"mid": "m1", "text": "Ватсап номер дайте"}}]}]}
+    evs = parse_events(p)
+    assert len(evs) == 1 and evs[0].kind == "message" and evs[0].text == "Ватсап номер дайте"
+
+
+def test_scan_new_conversations_answers_unknown_client(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path)
+        t = (utcnow() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S+0000")
+
+        async def recent_conversations(limit=25):
+            return [{"participants": [{"id": "BIZ", "username": "nur"}, {"id": "NEW1", "username": "jaman.rr"}],
+                     "messages": [{"id": "x1", "from_id": "NEW1", "text": "Ватсап номер дайте", "created_time": t}]},
+                    {"participants": [{"id": "BIZ"}, {"id": "OLD"}],
+                     "messages": [{"id": "x2", "from_id": "BIZ", "text": "ответ", "created_time": t}]}]
+        ig.recent_conversations = recent_conversations
+        for rt in proc.runtimes.values():
+            rt.account_ids.add("BIZ")
+        n = await proc.scan_new_conversations(utcnow())
+        await settle(proc)
+        assert n == 1 and len(ig.sent) == 1 and ig.sent[0][0] == "NEW1"
+        assert await proc.scan_new_conversations(utcnow()) == 0  # повтор не дублирует
+    asyncio.run(go())

@@ -46,7 +46,9 @@ def parse_events(payload: dict) -> list[Event]:
         return events
     for entry in payload.get("entry", []):
         account_id = str(entry.get("id", ""))
-        for m in entry.get("messaging", []):
+        # standby — сообщения из переписок, которыми сейчас «управляет» другое приложение/инструмент Meta
+        # (например, автоответы рекламы). Раньше бот их не видел и клиенты с рекламы оставались без ответа.
+        for m in list(entry.get("messaging", []) or []) + list(entry.get("standby", []) or []):
             msg = m.get("message")
             if not msg or msg.get("is_deleted") or not msg.get("mid"):
                 continue  # прочтения, реакции, удаления и т.п.
@@ -201,6 +203,27 @@ class InstagramClient:
         if r.status_code >= 400:
             raise RuntimeError(f"Instagram API {r.status_code}: {r.text[:300]}")
         return want
+
+    async def recent_conversations(self, limit: int = 25) -> list[dict]:
+        """Последние переписки аккаунта: [{'participants': [{'id','username'}], 'messages': [...] (новые первыми)}]."""
+        if not self.token:
+            return []
+        r = await self.http.get(
+            f"{self.base}/me/conversations",
+            params={"platform": "instagram", "limit": limit,
+                    "fields": "updated_time,participants,messages.limit(5){id,from,message,created_time}"},
+            headers={"Authorization": f"Bearer {self.token}"}, timeout=15)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Instagram API {r.status_code}: {r.text[:300]}")
+        out = []
+        for conv in (r.json() or {}).get("data", []):
+            msgs = [{"id": m.get("id"), "from_id": str((m.get("from") or {}).get("id", "")),
+                     "text": m.get("message") or "", "created_time": m.get("created_time") or ""}
+                    for m in (conv.get("messages") or {}).get("data", [])]
+            parts = [{"id": str(p.get("id", "")), "username": p.get("username", "")}
+                     for p in (conv.get("participants") or {}).get("data", [])]
+            out.append({"participants": parts, "messages": msgs, "updated_time": conv.get("updated_time", "")})
+        return out
 
     async def typing(self, user_id: str, on: bool = True) -> None:
         try:
