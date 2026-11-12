@@ -652,12 +652,30 @@ class Processor:
                         or created > now - timedelta(seconds=90)):
                     continue
                 key = rt.branch.conv_key(uid)
-                pending = []
+                pending, known, empty = [], [], 0
                 for m in msgs:  # новые первыми; берём сообщения клиента до первого ответа магазина
                     if m["from_id"] != uid:
                         break
-                    if m["id"] and m["text"].strip() and not await self._db(self.store.has_mid, m["id"]):
+                    if not m["text"].strip():
+                        empty += 1
+                    elif await self._db(self.store.has_mid, m["id"]):
+                        known.append(m)
+                    else:
                         pending.append(m)
+                if not pending:
+                    conv_row = await self._db(self.store.get_conv, key)
+                    blocked = self._blocked(conv_row)
+                    log.info("[%s] @%s ждёт ответа: в базе %d, без текста %d, блокировка: %s",
+                             rt.branch.key, client.get("username") or uid, len(known), empty, blocked or "нет")
+                    # сообщение уже в базе, но бот так и не ответил (и не на паузе) — отвечаем
+                    if known and not blocked and self._may_recover(key, now):
+                        ids = await self._db(self.store.unanswered_ids, key)
+                        if ids:
+                            await self._db(self.store.mark_unprocessed, ids)
+                            log.warning("Неотвеченное сообщение в диалоге %s (по списку Instagram) — отвечаем", key)
+                            self._spawn(self.process_user(key))
+                            found += 1
+                    continue
                 for m in reversed(pending):
                     log.warning("Пропущенное сообщение от %s найдено через API — отвечаем", key)
                     await self._handle_incoming(Event(kind="message", user_id=uid, account_id="", mid=m["id"],

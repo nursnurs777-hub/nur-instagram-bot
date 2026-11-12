@@ -259,6 +259,21 @@ class Store:
                 out.append((uid, ids))
         return out
 
+    def unanswered_ids(self, user_id: str) -> list[int]:
+        """ID сообщений клиента после последнего содержательного ответа магазина."""
+        with self.engine.begin() as c:
+            hist = c.execute(select(messages.c.id, messages.c.role, messages.c.content)
+                             .where(messages.c.user_id == user_id).order_by(messages.c.id.desc()).limit(20)).all()
+        ids = []
+        for mid, role, content in hist:
+            if role == "user":
+                ids.append(mid)
+            elif role == "manager" and _is_noise(content):
+                continue
+            else:
+                break
+        return ids
+
     def convs_unanswered(self, now: datetime, older_than: timedelta, window: timedelta) -> list[str]:
         """Есть необработанные сообщения клиента старше older_than, бот не на паузе и не в ручном режиме."""
         with self.engine.begin() as c:
