@@ -334,3 +334,11 @@ def test_installment_both_sims(catalog):
     r, _ = run(ToolExecutor(catalog, {}), "calculate_kaspi_installment", basis="product", model="iPhone 17 Pro",
                memory="256")
     assert len(r["by_sim"]) == 2
+
+
+def test_state_summary_topup_variants():
+    from app.tools import state_summary
+    s = state_summary({"last_topup": {"variants": [
+        {"new_device": "iPhone 17 256GB eSIM", "new_price": 600000, "tradein_estimate": 135000, "topup": 465000},
+        {"new_device": "iPhone 17 256GB SIM", "new_price": 650000, "tradein_estimate": 135000, "topup": 515000}]}})
+    assert "eSIM" in s and "SIM" in s

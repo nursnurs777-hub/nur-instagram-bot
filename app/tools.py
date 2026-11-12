@@ -672,7 +672,11 @@ def state_summary(state: dict) -> str:
         else:
             lines.append(f"Старый телефон клиента: {name}; {cond}; требуется индивидуальная оценка менеджером.")
     lt = state.get("last_topup")
-    if lt:
+    if lt and lt.get("variants"):
+        by = "; ".join(f"{v['new_device']} — {format_price(v['new_price'])} − "
+                       f"{format_price(v['tradein_estimate'])} = {format_price(v['topup'])}" for v in lt["variants"])
+        lines.append(f"Последний расчёт доплаты (по версиям SIM): {by}.")
+    elif lt and lt.get("new_device"):
         lines.append(f"Последний расчёт доплаты: {lt['new_device']} — {format_price(lt['new_price'])} − "
                      f"{format_price(lt['tradein_estimate'])} = {format_price(lt['topup'])}.")
     return "\n".join(lines)
