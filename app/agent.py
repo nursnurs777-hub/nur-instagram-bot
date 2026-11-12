@@ -223,7 +223,11 @@ class SalesAgent:
             runtime += STOCK_RULES.format(whatsapp=self.branch.whatsapp or self.branch.phone or "WhatsApp менеджера")
         ctx = [f"Сейчас: {WEEKDAYS_RU[now.weekday()]}, {now:%d.%m.%Y %H:%M} ({self.branch.city}). "
                f"Магазин сейчас {'открыт' if is_open else 'закрыт'}."]
-        summary = state_summary(state)
+        try:
+            summary = state_summary(state)
+        except Exception:  # карточка — подсказка; её сбой не должен ломать ответ клиенту
+            log.exception("Не удалось собрать карточку диалога — отвечаем без неё")
+            summary = ""
         if summary:
             ctx.append("Карточка диалога (подтверждённые данные из инструментов):\n" + summary)
         if extra:
