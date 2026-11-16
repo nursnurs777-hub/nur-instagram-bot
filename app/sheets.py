@@ -185,6 +185,9 @@ class CatalogProvider:
                 cat = await asyncio.to_thread(self._load_sync)
                 self._catalog, self._loaded_at = cat, time.monotonic()
                 log.info("Каталог обновлён: %s", cat.stats())
+                for sheet, why in cat.problems.items():
+                    log.warning("Лист прайса «%s» не прочитан (таблица %s): %s", sheet,
+                                self.s.spreadsheet_id or self.s.price_file, why)
             except Exception:
                 log.exception("Не удалось обновить каталог")
                 if self._catalog is None:

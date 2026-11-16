@@ -223,12 +223,35 @@ def _visible(row: list[str], show_idx: int | None) -> bool:
     return _cell(row, show_idx).lower() in _YES
 
 
+def _sheet_problem(rows: list[list[str]]) -> str | None:
+    """Почему лист с данными не дал ни одного товара (None — лист пустой или всё скрыто «Показать: Нет»)."""
+    rows = [r for r in rows if any(str(c).strip() for c in r)]
+    if len(rows) < 2:
+        return None
+    header = rows[0]
+    if _model_col(header, rows[1:]) is None:
+        return "нет колонки «Модель» в первой строке"
+    if _col(header, "цена", "price") is None:
+        return "нет колонки «Цена» в первой строке"
+    return None
+
+
+def _model_col(header: list[str], body: list[list[str]]) -> int | None:
+    i = _col(header, "модель", "model", "название")
+    if i is not None:
+        return i
+    # Заголовок первой колонки стёрли (пусто или пробел), а названия моделей в ней остались — берём её
+    if header and not str(header[0]).strip() and any(_cell(r, 0) for r in body):
+        return 0
+    return None
+
+
 def parse_retail_sheet(sheet_name: str, rows: list[list[str]]) -> list[Product]:
     rows = [r for r in rows if any(str(c).strip() for c in r)]
     if not rows:
         return []
     header, body = rows[0], rows[1:]
-    i_model = _col(header, "модель", "model", "название")
+    i_model = _model_col(header, body)
     i_price = _col(header, "цена", "price")
     if i_model is None or i_price is None:
         return []
@@ -312,11 +335,15 @@ class Catalog:
     def __init__(self, sheets: dict[str, list[list[str]]], tradein_sheet: str = "Закуп б/у"):
         self.products: list[Product] = []
         self.tradein: list[TradeInItem] = []
+        self.problems: dict[str, str] = {}  # лист → почему из него не прочитан ни один товар
         for name, rows in sheets.items():
             if name.strip().lower() == tradein_sheet.strip().lower():
                 self.tradein = parse_tradein_sheet(rows)
             else:
-                self.products.extend(parse_retail_sheet(name, rows))
+                items = parse_retail_sheet(name, rows)
+                self.products.extend(items)
+                if not items and (why := _sheet_problem(rows)):
+                    self.problems[name.strip()] = why
 
     # -------- поиск по всему каталогу
     def search(self, query: str, limit: int = 8) -> list[Product]:

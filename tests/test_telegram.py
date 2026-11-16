@@ -63,3 +63,16 @@ def test_report_format_html():
     assert "<b>Сбои: 4</b>" in t and "пауза из-за слишком частых ответов: 4" in t
     assert "Шымкент, 10.11 14:44 — «серый &lt;b&gt;»" in t and "10.11 09:00 — 11.11 09:00" in t
     print(t)
+
+
+def test_unread_price_sheet_alert():
+    import logging
+    from app.telegram import TelegramLogHandler, TelegramNotifier
+    n = TelegramNotifier("t", ["1"])
+    h = TelegramLogHandler(n)
+    rec = logging.LogRecord("app.sheets", logging.WARNING, "", 0,
+                            "Лист прайса «%s» не прочитан (таблица %s): %s",
+                            ("iphone", "SID123", "нет колонки «Модель» в первой строке"), None)
+    h.emit(rec)
+    text, _ = n._queue.get_nowait()
+    assert "«iphone»" in text and "нет колонки «Модель»" in text and "SID123" in text

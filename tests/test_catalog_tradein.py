@@ -342,3 +342,21 @@ def test_state_summary_topup_variants():
         {"new_device": "iPhone 17 256GB eSIM", "new_price": 600000, "tradein_estimate": 135000, "topup": 465000},
         {"new_device": "iPhone 17 256GB SIM", "new_price": 650000, "tradein_estimate": 135000, "topup": 515000}]}})
     assert "eSIM" in s and "SIM" in s
+
+
+def test_blank_model_header_still_reads_first_column():
+    # В таблице Астаны в A1 листа iphone оказался пробел вместо «Модель» — лист целиком пропадал
+    cat = Catalog({"iphone": [[" ", "Память", "Тип SIM", "Цена", "Показать"],
+                              ["iPhone 18 Pro Max", "2TB", "1 SIM + eSIM", "1 450 000 ₸", "Да"]]})
+    items, exact = cat.find_exact("iPhone 18 Pro Max", "2TB", "sim+esim")
+    assert exact and [p.price for p in items] == [1_450_000]
+    assert cat.problems == {}
+
+
+def test_unreadable_sheet_is_reported():
+    cat = Catalog({"iphone": [["Название товара?", "Память", "Стоимость"], ["iPhone 17", "256GB", "480 000"]],
+                   "iPad": [["Модель", "Цена", "Показать"], ["iPad Air", "300 000", "Нет"]],
+                   "Пустой": []})
+    assert cat.problems == {"iphone": "нет колонки «Цена» в первой строке"}  # скрытые и пустые листы — не сбой
+    cat2 = Catalog({"iphone": [["", "Цена"], ["", "1"], ["", "2"]]})
+    assert cat2.problems == {"iphone": "нет колонки «Модель» в первой строке"}
