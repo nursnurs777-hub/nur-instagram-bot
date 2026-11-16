@@ -45,7 +45,7 @@ services:
       - key: WHATSAPP_NUMBER
         sync: false
       - key: DRY_RUN
-        value: "1"
+        value: "0"
       - key: TABLE_NAME
         value: posts_shymkent
       - key: DATABASE_URL
