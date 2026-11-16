@@ -120,3 +120,10 @@ sync.QUIET_HOURS = "%d-%d" % ((__import__("time").gmtime().tm_hour + 5) % 24, ((
 sync.run(); m = methods()
 assert "sendPhoto" not in m, m
 print("7) один новый пост за запуск, тихие часы: ок")
+
+# 8: неполные карточки не публикуются, а уже выложенные удаляются
+sync.QUIET_HOURS = ""; sync.MAX_NEW_PER_RUN = 100
+CATALOG[:] = [item(100, None), item(101, 90000, batteryState=None), item(102, 90000, colorName=None), item(103, 90000)]
+sync.run(); m = methods()
+assert m.count("sendPhoto") == 1, m
+print("8) публикуются только полные карточки: ок")

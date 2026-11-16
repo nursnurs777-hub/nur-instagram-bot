@@ -162,6 +162,19 @@ def photo_urls(p):
     return urls[:MAX_PHOTOS]
 
 
+def missing_fields(p):
+    """Публикуем только полностью заполненные карточки: модель, память, цвет, АКБ, цена, фото."""
+    checks = {
+        "модель": p.get("modelName") or p.get("familyName"),
+        "память": p.get("memoryName"),
+        "цвет": p.get("colorName"),
+        "АКБ": p.get("batteryState") is not None,
+        "цена": (p.get("averagePrice") or 0) > 0,
+        "фото": photo_urls(p),
+    }
+    return [name for name, ok in checks.items() if not ok]
+
+
 def fingerprint(p):
     """Всё, что видно в посте. Изменилось что-то из этого — пост перевыкладывается."""
     keys = ["modelName", "familyName", "memoryName", "ramName", "colorName", "averagePrice", "oldPrice",
@@ -365,13 +378,20 @@ def run():
         log.warning("Не удалось получить данные компании: %s", ex)
 
     products = sfon_fetch_old_products()
-    current = {}
+    current, skipped = {}, {}
     for p in products:
         pid = p.get("productId")
-        if pid is None or p.get("state", "OLD") != "OLD" or not photo_urls(p):
+        if pid is None or p.get("state", "OLD") != "OLD":
+            continue
+        missing = missing_fields(p)
+        if missing:
+            for f in missing:
+                skipped[f] = skipped.get(f, 0) + 1
             continue
         current[int(pid)] = p
-    log.info("SFON: б/у всего %d, с фото %d; в канале постов: %d", len(products), len(current), len(posted))
+    if skipped:
+        log.info("Пропущены товары с незаполненными полями (сколько раз не хватает): %s", skipped)
+    log.info("SFON: б/у всего %d, полностью заполнены %d; в канале постов: %d", len(products), len(current), len(posted))
     types = {}
     for p in current.values():
         key = f"{p.get('productTypeName')} (код {p.get('productTypeCode')})"
