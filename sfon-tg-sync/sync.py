@@ -295,6 +295,10 @@ def run():
         log.error("Не заданы переменные: %s", ", ".join(missing))
         return 2
 
+    if os.environ.get("RENDER") and not DATABASE_URL and not DRY_RUN:
+        log.error("На Render файловая система временная: задайте DATABASE_URL (Postgres), иначе посты будут дублироваться")
+        return 2
+
     store = Store()
     posted = store.all()
 
