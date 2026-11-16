@@ -236,7 +236,7 @@ def post_product(p):
     """Публикует пост. Возвращает список message_id."""
     urls, cap = photo_urls(p), caption(p)
     if DRY_RUN:
-        log.info("[DRY] пост %s: %d фото", p.get("productId"), len(urls))
+        log.info("[DRY] пост %s: %d фото\n%s", p.get("productId"), len(urls), cap)
         return [0]
 
     def send(upload):
@@ -306,6 +306,11 @@ def run():
             continue
         current[int(pid)] = p
     log.info("SFON: б/у всего %d, с фото %d; в канале постов: %d", len(products), len(current), len(posted))
+    types = {}
+    for p in current.values():
+        key = f"{p.get('productTypeName')} (код {p.get('productTypeCode')})"
+        types[key] = types.get(key, 0) + 1
+    log.info("Типы товаров с фото: %s", types)
 
     # Защита от массового удаления при сбое на стороне SFON
     if posted and len(current) < len(posted) * SAFETY_MIN_RATIO and len(posted) >= 10:
@@ -320,7 +325,8 @@ def run():
     # 1. Проданные / снятые — удаляем
     for pid in sold:
         remove_post(posted[pid][1], "ПРОДАНО")
-        store.delete(pid)
+        if not DRY_RUN:
+            store.delete(pid)
         stats["sold"] += 1
         log.info("Удалён пост товара %s (нет в базе)", pid)
 
@@ -349,7 +355,8 @@ def run():
         if kind == "updated":
             # новый пост уже вышел — теперь убираем старый
             remove_post(posted[pid][1], "НЕАКТУАЛЬНО — см. новый пост")
-        store.save(pid, fp, new_ids)
+        if not DRY_RUN:
+            store.save(pid, fp, new_ids)
         stats[kind] += 1
         budget -= 1
         log.info("%s товар %s → сообщения %s", "Обновлён" if kind == "updated" else "Опубликован", pid, new_ids)
