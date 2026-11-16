@@ -169,8 +169,10 @@ class Store:
 
     def history(self, user_id: str, limit: int) -> list[dict]:
         with self.engine.begin() as c:
+            # по времени, а не по id: сообщения, догруженные из Instagram позже, встают на своё место
             rows = c.execute(select(messages).where(messages.c.user_id == user_id)
-                             .order_by(messages.c.id.desc()).limit(limit)).mappings().all()
+                             .order_by(messages.c.created_at.desc(), messages.c.id.desc())
+                             .limit(limit)).mappings().all()
             return [dict(r) for r in reversed(rows)]
 
     def last_message(self, user_id: str) -> dict | None:

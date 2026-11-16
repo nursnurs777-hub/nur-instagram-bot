@@ -406,6 +406,37 @@ class Processor:
             return "manager pause"
         return None
 
+    async def _pull_missed(self, rt: BranchRuntime, key: str, uid: str) -> int:
+        """Перед ответом сверяемся с Instagram: клиент часто пишет несколько сообщений подряд, а вебхук
+        (особенно в переписках с рекламы) приходит не на каждое. Без этого бот не видит «16 Pro Max 1 ТБ»,
+        отвечает «Чем могу помочь?» и переспрашивает то, что клиент уже написал.
+        Дописываем только сообщения клиента после последнего ответа магазина — так порядок истории не ломается."""
+        fn = getattr(rt.ig, "recent_messages", None)
+        if fn is None:
+            return 0
+        try:
+            msgs = await asyncio.wait_for(fn(uid, 10), 8)
+        except Exception as e:
+            log.info("Не удалось сверить переписку %s с Instagram перед ответом: %s", key, e)
+            return 0
+        tail = []
+        for m in msgs:  # новые первыми; на первом сообщении магазина останавливаемся
+            if m.get("from_id") != uid:
+                break
+            tail.append(m)
+        added = 0
+        for m in reversed(tail):
+            if not m.get("id") or not (m.get("text") or "").strip():
+                continue
+            if await self._db(self.store.has_mid, m["id"]):
+                continue
+            row = await self._db(self.store.add_message, key, "user", m["text"], m["id"], False,
+                                 _parse_ig_time(m.get("created_time") or "") or utcnow())
+            if row:
+                added += 1
+                log.warning("Пропущенное сообщение от %s найдено через API перед ответом", key)
+        return added
+
     async def process_user(self, user_id: str, followup: bool = False) -> None:
         if user_id.startswith("web-test:"):
             return  # тестовые диалоги со страницы /test в Instagram не отправляются
@@ -416,6 +447,8 @@ class Processor:
             if reason:
                 log.info("Не отвечаем %s: %s", user_id, reason)
                 return
+            if not followup:
+                await self._pull_missed(rt, user_id, igsid)
             pending = await self._db(self.store.unprocessed, user_id)
             if not pending and not followup:
                 return

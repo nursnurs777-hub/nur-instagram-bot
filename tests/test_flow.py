@@ -413,6 +413,44 @@ def test_reconcile_picks_up_missed_message(tmp_path):
 
 
 
+def test_missed_messages_pulled_before_reply(tmp_path):
+    """Клиент с рекламы написал три сообщения, вебхук пришёл только на последнее — бот должен видеть все три
+    в правильном порядке, а не переспрашивать модель."""
+    async def go():
+        proc, ig, agent = make(tmp_path)
+        t = lambda s: (utcnow() - timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%S+0000")
+
+        async def recent(uid, limit=6):
+            return [{"id": "m3", "from_id": "U1", "text": "Сколько будет", "created_time": t(2)},
+                    {"id": "m2", "from_id": "U1", "text": "У меня айфон 16 про Макс 1 гб", "created_time": t(4)},
+                    {"id": "m1", "from_id": "U1", "text": "Здравствуйте", "created_time": t(6)},
+                    {"id": "old-bot", "from_id": "BIZ", "text": "вчерашний ответ", "created_time": t(90000)},
+                    {"id": "old", "from_id": "U1", "text": "вчерашний вопрос", "created_time": t(90010)}]
+        ig.recent_messages = recent
+        await proc.handle_event(msg("m3", "Сколько будет"))
+        await settle(proc)
+        users = [h["content"] for h in agent.calls[-1] if h["role"] == "user"]
+        assert users == ["Здравствуйте", "У меня айфон 16 про Макс 1 гб", "Сколько будет"]
+        assert len(ig.sent) == 1
+        # следующий ответ ничего не дублирует, всё уже помечено обработанным
+        assert proc.store.unprocessed("U1") == []
+        assert await proc._pull_missed(proc.primary, "U1", "U1") == 0
+    asyncio.run(go())
+
+
+def test_pull_missed_survives_api_error(tmp_path):
+    async def go():
+        proc, ig, _ = make(tmp_path)
+
+        async def boom(uid, limit=6):
+            raise RuntimeError("Instagram API 500")
+        ig.recent_messages = boom
+        await proc.handle_event(msg("a", "есть 17 про?"))
+        await settle(proc)
+        assert len(ig.sent) == 1 and "есть 17 про?" in ig.sent[0][1]
+    asyncio.run(go())
+
+
 def test_empty_service_echo_ignored(tmp_path):
     """Карточка «Благодарим за ваш отзыв» приходит пустым echo — бот должен ответить клиенту."""
     async def go():
