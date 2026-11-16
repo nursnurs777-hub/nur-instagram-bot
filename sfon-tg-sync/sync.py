@@ -22,7 +22,9 @@ import logging
 import os
 import sqlite3
 import sys
+import re
 import time
+import urllib.parse
 
 import requests
 
@@ -36,6 +38,10 @@ TG_CHANNEL = os.environ.get("TG_CHANNEL", "@nurelectronics01")
 # Необязательные фильтры
 PRODUCT_TYPE_ID = os.environ.get("SFON_PRODUCT_TYPE_ID")  # ID типа «Смартфоны» (если в базе есть не только телефоны)
 STORE_ID = os.environ.get("SFON_STORE_ID")                # только один магазин
+
+# Номер WhatsApp для ссылки под постом (если не задан — берётся WhatsApp магазина из SFON)
+WHATSAPP_NUMBER = os.environ.get("WHATSAPP_NUMBER", "")
+SHOW_STORE_NAME = os.environ.get("SHOW_STORE_NAME", "0") == "1"   # название склада («Основной») не показываем
 
 DB_PATH = os.environ.get("DB_PATH", "state.sqlite3")
 DATABASE_URL = os.environ.get("DATABASE_URL")             # если задан — храним состояние в Postgres
@@ -145,6 +151,16 @@ def fingerprint(p):
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def caption_hash(p):
+    return hashlib.sha256(caption(p).encode()).hexdigest()[:16]
+
+
+def split_fp(stored):
+    """Сохранённый отпечаток: «данные:подпись». Старые записи — только данные."""
+    data, _, cap = stored.partition(":")
+    return data, cap
+
+
 def fmt_price(v):
     if v is None:
         return None
@@ -183,7 +199,7 @@ def caption(p):
         lines.append("\n💰 Цена: уточняйте")
 
     store = []
-    if p.get("storeName"):
+    if SHOW_STORE_NAME and p.get("storeName"):
         store.append(f"🏪 {e(p['storeName'])}")
     if p.get("storeAddress"):
         addr = e(p["storeAddress"])
@@ -192,16 +208,21 @@ def caption(p):
         store.append(f"📍 {addr}")
     if p.get("storeTelephone"):
         store.append(f"☎️ {e(p['storeTelephone'])}")
-    if p.get("storeWhatsapp"):
-        wa = "".join(ch for ch in p["storeWhatsapp"] if ch.isdigit())
-        store.append(f'💬 <a href="https://wa.me/{wa}">WhatsApp</a>' if wa else f"💬 {e(p['storeWhatsapp'])}")
+    wa = "".join(ch for ch in (WHATSAPP_NUMBER or p.get("storeWhatsapp") or "") if ch.isdigit())
+    if len(wa) == 11 and wa.startswith("8"):
+        wa = "7" + wa[1:]
+    if wa:
+        msg = f"Здравствуйте! Интересует {title}" + (f" {specs}" if specs else "") + (f" за {price}" if price else "")
+        link = f"https://wa.me/{wa}?text={urllib.parse.quote(msg)}"
+        store.append(f'💬 <a href="{html.escape(link, quote=True)}"><b>Написать в WhatsApp</b></a>')
     store_block = ("\n\n" + "\n".join(store)) if store else ""
 
     desc = (p.get("description") or "").strip()
     head = "\n".join(lines)
     # Лимит подписи в Telegram — 1024 символа (считаем с запасом, по экранированному тексту)
     if desc:
-        room = 1000 - len(head) - len(store_block) - 4
+        visible = lambda t: len(html.unescape(re.sub(r"<[^>]+>", "", t)))  # noqa: E731 — Telegram считает видимый текст
+        room = 1000 - visible(head) - visible(store_block) - 4
         if room > 20:
             d = desc if len(desc) <= room else desc[: room - 1].rstrip() + "…"
             head += "\n\n📝 " + e(d)
@@ -344,14 +365,34 @@ def run():
         log.info("Удалён пост товара %s (нет в базе)", pid)
 
     # 2. Изменённые и новые — публикуем (с лимитом за запуск)
-    queue = []
+    queue, recaption = [], []
     for pid, p in current.items():
-        fp = fingerprint(p)
+        fp = f"{fingerprint(p)}:{caption_hash(p)}"
         if pid in posted:
-            if posted[pid][0] != fp:
-                queue.append(("updated", pid, p, fp))
+            old_data, old_cap = split_fp(posted[pid][0])
+            if old_data != fingerprint(p):
+                queue.append(("updated", pid, p, fp))     # данные товара изменились — перевыкладываем
+            elif old_cap != caption_hash(p):
+                recaption.append((pid, p, fp))            # поменялся только формат подписи — редактируем
         else:
             queue.append(("new", pid, p, fp))
+
+    stats["edited"] = 0
+    for pid, p, fp in recaption:
+        ids = [m for m in posted[pid][1] if m]
+        if DRY_RUN or not ids:
+            continue
+        try:
+            tg("editMessageCaption", {"chat_id": TG_CHANNEL, "message_id": ids[0],
+                                      "caption": caption(p), "parse_mode": "HTML"})
+        except TelegramError as ex:
+            if "not modified" not in str(ex):
+                log.error("Не удалось отредактировать пост товара %s: %s", pid, ex)
+                continue
+        store.save(pid, fp, posted[pid][1])
+        stats["edited"] += 1
+        log.info("Отредактирована подпись товара %s", pid)
+        time.sleep(1)
     # сначала обновления (чтобы в канале не висела старая цена), потом новые
     queue.sort(key=lambda x: x[0] != "updated")
 
@@ -376,7 +417,7 @@ def run():
         if not DRY_RUN:
             time.sleep(POST_DELAY_SEC)
 
-    log.info("Готово: новых %(new)d, обновлено %(updated)d, удалено %(sold)d, отложено до след. запуска %(deferred)d",
+    log.info("Готово: новых %(new)d, обновлено %(updated)d, подпись исправлена %(edited)d, удалено %(sold)d, отложено до след. запуска %(deferred)d",
              stats)
     return 0
 

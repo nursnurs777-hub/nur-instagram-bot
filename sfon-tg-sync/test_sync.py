@@ -94,3 +94,17 @@ print("5) защита от пустого ответа SFON: ок")
 cap = sync.caption(item(7, 199990, oldPrice=220000, ramName="6 GB", description="Отличное состояние <без царапин>"))
 assert len(cap) <= 1024 and "&lt;без" in cap
 print("\nПример подписи:\n" + cap)
+
+# Запуск 6: поменялся только формат подписи (добавили WhatsApp) — редактируем, не перевыкладываем
+sync.store_reset = None
+CATALOG[:] = [item(i, 100000 + i) for i in range(10, 30)]
+sync.run(); methods()
+sync.WHATSAPP_NUMBER = "8 701 111 22 33"
+sync.run()
+m = methods()
+assert m == ["editMessageCaption"] * 20, m
+sync.run()
+assert methods() == []
+cap = sync.caption(item(10, 100010))
+assert "wa.me/77011112233?text=" in cap and "Nur Electronics" not in cap, cap
+print("6) смена формата → редактирование подписи: ок\n" + cap)
