@@ -25,6 +25,34 @@ services:
           name: sfon-sync-db
           property: connectionString
 
+  - type: cron
+    name: sfon-telegram-sync-shymkent
+    runtime: python
+    plan: starter
+    region: frankfurt
+    repo: https://github.com/nursnurs777-hub/nur-instagram-bot
+    branch: sfon-tg-sync
+    schedule: "*/10 * * * *"
+    buildCommand: pip install -r sfon-tg-sync/requirements.txt
+    startCommand: python sfon-tg-sync/sync.py
+    envVars:
+      - key: SFON_API_KEY
+        sync: false
+      - key: TG_BOT_TOKEN
+        sync: false
+      - key: TG_CHANNEL
+        sync: false
+      - key: WHATSAPP_NUMBER
+        sync: false
+      - key: DRY_RUN
+        value: "1"
+      - key: TABLE_NAME
+        value: posts_shymkent
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sfon-sync-db
+          property: connectionString
+
 databases:
   - name: sfon-sync-db
     plan: basic-256mb
