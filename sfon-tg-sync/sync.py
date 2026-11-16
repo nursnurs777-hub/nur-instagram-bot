@@ -153,8 +153,17 @@ def fmt_price(v):
 
 def caption(p):
     e = lambda s: html.escape(str(s))  # noqa: E731
-    title = p.get("modelName") or p.get("familyName") or "Телефон"
-    specs = " / ".join(x for x in [p.get("memoryName"), p.get("ramName") and f"RAM {p['ramName']}"] if x)
+    fam, model = (p.get("familyName") or "").strip(), (p.get("modelName") or "").strip()
+    if fam and model and fam.lower() not in model.lower():
+        title = f"{fam} {model}"
+    else:
+        title = model or fam or "Телефон"
+
+    def gb(v):
+        v = (v or "").strip()
+        return f"{v} ГБ" if v.isdigit() else v
+
+    specs = " / ".join(x for x in [gb(p.get("memoryName")), p.get("ramName") and f"RAM {gb(p['ramName'])}"] if x)
     lines = [f"📱 <b>{e(title)}</b>" + (f" {e(specs)}" if specs else "")]
     if p.get("colorName"):
         lines.append(f"🎨 Цвет: {e(p['colorName'])}")
