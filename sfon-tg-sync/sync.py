@@ -332,6 +332,18 @@ def run():
     store = Store()
     posted = store.all()
 
+    try:
+        r = requests.get(f"{SFON_BASE_URL}/v1/company", headers={"X-API-Key": SFON_API_KEY}, timeout=30)
+        if r.ok:
+            c = r.json()
+            cd = c.get("companyDto") or {}
+            log.info("Компания: %s, тел. %s, адрес %s", cd.get("companyName"), cd.get("telephone"), cd.get("address"))
+            for st in c.get("stores") or []:
+                log.info("Магазин id=%s «%s»: адрес %s, тел. %s, WhatsApp %s", st.get("id"), st.get("storeName"),
+                         st.get("address"), st.get("telephone"), st.get("telephoneWhatsapp"))
+    except Exception as ex:  # noqa: BLE001 — справочная информация, не критично
+        log.warning("Не удалось получить данные компании: %s", ex)
+
     products = sfon_fetch_old_products()
     current = {}
     for p in products:
