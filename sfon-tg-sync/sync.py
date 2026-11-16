@@ -47,7 +47,11 @@ DB_PATH = os.environ.get("DB_PATH", "state.sqlite3")
 DATABASE_URL = os.environ.get("DATABASE_URL")             # если задан — храним состояние в Postgres
 
 MAX_PHOTOS = int(os.environ.get("MAX_PHOTOS", "10"))           # Telegram: максимум 10 в альбоме
-MAX_POSTS_PER_RUN = int(os.environ.get("MAX_POSTS_PER_RUN", "40"))
+MAX_POSTS_PER_RUN = int(os.environ.get("MAX_POSTS_PER_RUN", "40"))   # всего публикаций за запуск (обновления + новые)
+MAX_NEW_PER_RUN = int(os.environ.get("MAX_NEW_PER_RUN", "1"))       # новых товаров за запуск: 1 = не чаще раза в 10 минут
+# Тихие часы (по Астане): новые посты и перевыкладка не делаются, удаление проданных — всегда. Пусто = без тихих часов.
+QUIET_HOURS = os.environ.get("QUIET_HOURS", "23-8")
+TABLE_NAME = os.environ.get("TABLE_NAME", "posts")                  # своя таблица для каждого филиала в общей базе
 POST_DELAY_SEC = float(os.environ.get("POST_DELAY_SEC", "4"))   # пауза между постами (лимиты Telegram)
 # Защита: если SFON вдруг вернул 0 товаров, а в канале много постов — ничего не удаляем
 SAFETY_MIN_RATIO = float(os.environ.get("SAFETY_MIN_RATIO", "0.3"))
@@ -58,6 +62,22 @@ log = logging.getLogger("sync")
 
 
 # ---------------------------------------------------------------- хранилище
+
+if not TABLE_NAME.replace("_", "").isalnum():
+    raise SystemExit("TABLE_NAME: только латинские буквы, цифры и _")
+
+
+def is_quiet_now():
+    if not QUIET_HOURS.strip():
+        return False
+    try:
+        from zoneinfo import ZoneInfo
+        hour = __import__("datetime").datetime.now(ZoneInfo("Asia/Almaty")).hour
+    except Exception:  # noqa: BLE001 — нет базы часовых поясов: Астана = UTC+5
+        hour = (time.gmtime().tm_hour + 5) % 24
+    start, end = (int(x) for x in QUIET_HOURS.split("-"))
+    return start <= hour < end if start < end else (hour >= start or hour < end)
+
 
 class Store:
     """productId -> (fingerprint, [message_ids]). SQLite по умолчанию, Postgres если задан DATABASE_URL."""
@@ -72,7 +92,7 @@ class Store:
             self.conn.isolation_level = None
             self.ph = "?"
         self._exec(
-            "CREATE TABLE IF NOT EXISTS posts ("
+            f"CREATE TABLE IF NOT EXISTS {TABLE_NAME} ("
             " product_id BIGINT PRIMARY KEY,"
             " fingerprint TEXT NOT NULL,"
             " message_ids TEXT NOT NULL,"
@@ -85,18 +105,18 @@ class Store:
         return cur
 
     def all(self):
-        rows = self._exec("SELECT product_id, fingerprint, message_ids FROM posts").fetchall()
+        rows = self._exec(f"SELECT product_id, fingerprint, message_ids FROM {TABLE_NAME}").fetchall()
         return {int(r[0]): (r[1], json.loads(r[2])) for r in rows}
 
     def save(self, product_id, fingerprint, message_ids):
-        self._exec("DELETE FROM posts WHERE product_id = ?", (product_id,))
+        self._exec(f"DELETE FROM {TABLE_NAME} WHERE product_id = ?", (product_id,))
         self._exec(
-            "INSERT INTO posts (product_id, fingerprint, message_ids, updated_at) VALUES (?, ?, ?, ?)",
+            f"INSERT INTO {TABLE_NAME} (product_id, fingerprint, message_ids, updated_at) VALUES (?, ?, ?, ?)",
             (product_id, fingerprint, json.dumps(message_ids), int(time.time())),
         )
 
     def delete(self, product_id):
-        self._exec("DELETE FROM posts WHERE product_id = ?", (product_id,))
+        self._exec(f"DELETE FROM {TABLE_NAME} WHERE product_id = ?", (product_id,))
 
 
 # ---------------------------------------------------------------- SFON
@@ -408,11 +428,16 @@ def run():
     # сначала обновления (чтобы в канале не висела старая цена), потом новые
     queue.sort(key=lambda x: x[0] != "updated")
 
-    budget = MAX_POSTS_PER_RUN
+    budget, new_budget = MAX_POSTS_PER_RUN, MAX_NEW_PER_RUN
+    quiet = is_quiet_now()
+    if quiet and queue:
+        log.info("Тихие часы (%s): публикации отложены до утра", QUIET_HOURS)
     for kind, pid, p, fp in queue:
-        if budget <= 0:
+        if quiet or budget <= 0 or (kind == "new" and new_budget <= 0):
             stats["deferred"] += 1
             continue
+        if kind == "new":
+            new_budget -= 1
         try:
             new_ids = post_product(p)
         except Exception as ex:  # noqa: BLE001 — один плохой товар не должен ломать весь запуск

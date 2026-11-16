@@ -6,6 +6,8 @@ os.environ["DB_PATH"] = tempfile.mktemp(suffix=".sqlite3")
 os.environ["SFON_API_KEY"] = "x"
 os.environ["TG_BOT_TOKEN"] = "x"
 os.environ["POST_DELAY_SEC"] = "0"
+os.environ["MAX_NEW_PER_RUN"] = "100"
+os.environ["QUIET_HOURS"] = ""
 
 import sync  # noqa: E402
 
@@ -108,3 +110,13 @@ assert methods() == []
 cap = sync.caption(item(10, 100010))
 assert "wa.me/77011112233?text=" in cap and "Nur Electronics" not in cap, cap
 print("6) смена формата → редактирование подписи: ок\n" + cap)
+
+# Запуск 7: лимит новых постов и тихие часы
+sync.MAX_NEW_PER_RUN = 1
+CATALOG[:] = CATALOG + [item(i, 50000 + i) for i in range(40, 43)]
+sync.run(); m = methods()
+assert m.count("sendPhoto") == 1, m
+sync.QUIET_HOURS = "%d-%d" % ((__import__("time").gmtime().tm_hour + 5) % 24, ((__import__("time").gmtime().tm_hour + 6) % 24))
+sync.run(); m = methods()
+assert "sendPhoto" not in m, m
+print("7) один новый пост за запуск, тихие часы: ок")
