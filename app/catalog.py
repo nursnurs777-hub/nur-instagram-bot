@@ -223,12 +223,22 @@ def _visible(row: list[str], show_idx: int | None) -> bool:
     return _cell(row, show_idx).lower() in _YES
 
 
-def _sheet_problem(rows: list[list[str]]) -> str | None:
-    """Почему лист с данными не дал ни одного товара (None — лист пустой или всё скрыто «Показать: Нет»)."""
+NOTE_SHEET_RX = re.compile(r"(прочитать|инструкц|заметк|памятк|readme|notes?\b|как менять)", re.I)
+
+
+def _sheet_problem(rows: list[list[str]], name: str = "") -> str | None:
+    """Почему лист с данными не дал ни одного товара (None — лист пустой, всё скрыто «Показать: Нет»
+    или это лист-инструкция без таблицы)."""
+    if NOTE_SHEET_RX.search(name or ""):
+        return None
     rows = [r for r in rows if any(str(c).strip() for c in r)]
     if len(rows) < 2:
         return None
     header = rows[0]
+    has_price = _col(header, "цена", "price") is not None
+    has_model = _model_col(header, rows[1:]) is not None
+    if not has_price and not has_model:
+        return None  # ни «Модель», ни «Цена» — это не прайс, а текст/заметки
     if _model_col(header, rows[1:]) is None:
         return "нет колонки «Модель» в первой строке"
     if _col(header, "цена", "price") is None:
@@ -342,7 +352,7 @@ class Catalog:
             else:
                 items = parse_retail_sheet(name, rows)
                 self.products.extend(items)
-                if not items and (why := _sheet_problem(rows)):
+                if not items and (why := _sheet_problem(rows, name)):
                     self.problems[name.strip()] = why
 
     # -------- поиск по всему каталогу

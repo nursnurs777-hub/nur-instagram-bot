@@ -360,3 +360,12 @@ def test_unreadable_sheet_is_reported():
     assert cat.problems == {"iphone": "нет колонки «Цена» в первой строке"}  # скрытые и пустые листы — не сбой
     cat2 = Catalog({"iphone": [["", "Цена"], ["", "1"], ["", "2"]]})
     assert cat2.problems == {"iphone": "нет колонки «Модель» в первой строке"}
+
+
+def test_note_sheet_is_not_a_price_problem():
+    from app.catalog import Catalog
+    notes = [["🟠 ЭТО ПРАЙС ФИЛИАЛА В ШЫМКЕНТЕ"], ["Как менять данные:"], ["3. Цена — числом или как «480 000 ₸»."]]
+    assert Catalog({"🟠 ШЫМКЕНТ — прочитать": notes}).problems == {}
+    assert Catalog({"Заметки": [["текст"], ["ещё текст"]]}).problems == {}
+    broken = [["Товар", "Цена"], ["AirPods 4", "60 000 ₸"]]
+    assert Catalog({"AirPods": broken}).problems  # настоящая поломка по-прежнему видна
