@@ -16,6 +16,10 @@ services:
         sync: false
       - key: TG_CHANNEL
         value: "@nurelectronics01"
+      - key: WEBHOOK_BASE_URL
+        value: https://nur-instagram-bot.onrender.com
+      - key: WEBHOOK_KEY
+        value: astana
       - key: DRY_RUN
         value: "0"
       - key: WHATSAPP_NUMBER
@@ -52,6 +56,10 @@ services:
         value: "0"
       - key: TABLE_NAME
         value: posts_shymkent
+      - key: WEBHOOK_BASE_URL
+        value: https://nur-instagram-bot.onrender.com
+      - key: WEBHOOK_KEY
+        value: shymkent
       - key: SHOW_YEAR
         value: "0"
       - key: DATABASE_URL
