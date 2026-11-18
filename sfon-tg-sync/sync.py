@@ -42,7 +42,10 @@ STORE_ID = os.environ.get("SFON_STORE_ID")                # только оди�
 # Номер WhatsApp для ссылки под постом (если не задан — берётся WhatsApp магазина из SFON)
 WHATSAPP_NUMBER = os.environ.get("WHATSAPP_NUMBER", "")
 SHOW_STORE_NAME = os.environ.get("SHOW_STORE_NAME", "0") == "1"
-SHOW_YEAR = os.environ.get("SHOW_YEAR", "1") == "1"   # показывать год выпуска в посте   # название склада («Основной») не показываем
+SHOW_YEAR = os.environ.get("SHOW_YEAR", "1") == "1"   # показывать год выпуска в посте
+# Подсказка по реакциям внизу поста (пусто = не показывать)
+REACTIONS_LEGEND = os.environ.get(
+    "REACTIONS_LEGEND", "❤️ — нравится устройство\n🔥 — хорошая цена\n👀 — присматриваюсь").replace("\\n", "\n")   # название склада («Основной») не показываем
 
 DB_PATH = os.environ.get("DB_PATH", "state.sqlite3")
 DATABASE_URL = os.environ.get("DATABASE_URL")             # если задан — храним состояние в Postgres
@@ -250,6 +253,8 @@ def caption(p):
         link = f"https://wa.me/{wa}?text={urllib.parse.quote(msg)}"
         store.append(f'💬 <a href="{html.escape(link, quote=True)}"><b>Написать в WhatsApp</b></a>')
     store_block = ("\n\n" + "\n".join(store)) if store else ""
+    if REACTIONS_LEGEND.strip():
+        store_block += "\n\n<i>" + e(REACTIONS_LEGEND.strip()) + "</i>"
 
     desc = (p.get("description") or "").strip()
     head = "\n".join(lines)
