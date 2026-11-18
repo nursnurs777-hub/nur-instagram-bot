@@ -21,6 +21,7 @@ from .telegram import HideTelegramRequests, TelegramLogHandler, TelegramNotifier
 from .sheets import CatalogProvider
 from .stock import StockService
 from .testchat import router as testchat_router
+from .sfon_reactions import router as sfon_reactions_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -110,6 +111,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=f"{settings.store_name} AI", lifespan=lifespan)
 app.include_router(testchat_router)
+app.include_router(sfon_reactions_router)  # кнопки реакций в Telegram-каналах б/у телефонов
 
 
 @app.get("/health")
