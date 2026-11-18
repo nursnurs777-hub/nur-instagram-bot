@@ -24,10 +24,6 @@ services:
         value: "0"
       - key: WHATSAPP_NUMBER
         value: "+77028881111"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: sfon-sync-db
-          property: connectionString
       - key: NUR_DB_URL
         fromDatabase:
           name: nur-db
@@ -62,20 +58,8 @@ services:
         value: shymkent
       - key: SHOW_YEAR
         value: "0"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: sfon-sync-db
-          property: connectionString
       - key: NUR_DB_URL
         fromDatabase:
           name: nur-db
           property: connectionString
 
-databases:
-  - name: sfon-sync-db
-    plan: basic-256mb
-    region: frankfurt
-    diskSizeGB: 1
-    postgresMajorVersion: "17"
-    databaseName: sfon_sync_db
-    user: sfon_sync_db_user

@@ -276,6 +276,8 @@ state.save_post({"product_id": 5, "message_ids": [900], "photo_ids": None, "desc
                  "legacy_fingerprint": sync.legacy_fingerprint(legacy) + ":abc"})
 CATALOG[:] = [legacy]
 run()
+assert tg.take() == ["editMessageCaption"]  # только убрать подсказку по реакциям
+run()
 assert tg.take() == []
 CATALOG[:] = [item(5, price=300000)]
 run()
@@ -318,3 +320,16 @@ if PG:
 
 print("\nПример описания:\n" + desc(5)["text"])
 print("Кнопки:", [[b["text"] for b in r] for r in desc(5)["kb"]["inline_keyboard"]])
+
+# 18. Подпись старого поста: убрать подсказку по реакциям один раз
+state.save_post({"product_id": 8, "message_ids": [901], "photo_ids": None, "desc_message_id": None,
+                 "legacy_fingerprint": sync.legacy_fingerprint(item(8)) + ":x"})
+tg.msgs[901] = {"kind": "photo", "media": "x", "text": "…❤️ — нравится устройство", "kb": None}
+CATALOG[:] = [item(5, price=290000, photos=(1, 2, 3, 4)), item(8)]
+tg.take()
+run()
+assert tg.take() == ["editMessageCaption"] and "нравится" not in tg.msgs[901]["text"]
+assert "Написать в WhatsApp" in tg.msgs[901]["text"] and "Аккумулятор: 100%" in tg.msgs[901]["text"]
+run()
+assert tg.take() == []
+ok(18, "старые подписи: подсказка по реакциям убрана, один раз")

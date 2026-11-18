@@ -251,6 +251,37 @@ def legacy_fingerprint(p):
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def legacy_caption(p):
+    """Подпись старого поста (без кнопок) в прежнем формате — но без подсказки по реакциям."""
+    e = lambda s: html.escape(str(s))  # noqa: E731
+    title, specs = title_of(p), memory_of(p)
+    lines = [f"📱 <b>{e(title)}</b>" + (f" {e(specs)}" if specs else "")]
+    lines.append(f"🎨 Цвет: {e(p.get('colorName'))}")
+    lines.append(f"🔋 Аккумулятор: {e(p.get('batteryState'))}%")
+    if SHOW_YEAR and p.get("year"):
+        lines.append(f"📅 Год: {e(p['year'])}")
+    lines.append("♻️ Состояние: б/у")
+    price, old = fmt_price(p.get("averagePrice")), fmt_price(p.get("oldPrice"))
+    if old and (p.get("oldPrice") or 0) > (p.get("averagePrice") or 0):
+        lines.append(f"\n💰 <b>{e(price)}</b>  <s>{e(old)}</s>")
+    else:
+        lines.append(f"\n💰 <b>{e(price)}</b>")
+    store = []
+    if p.get("storeAddress"):
+        store.append(f"📍 {e(p['storeAddress'])}")
+    if p.get("storeTelephone"):
+        store.append(f"☎️ {e(p['storeTelephone'])}")
+    if wa_url(p):
+        store.append(f'💬 <a href="{html.escape(wa_url(p), quote=True)}"><b>Написать в WhatsApp</b></a>')
+    head = "\n".join(lines)
+    desc = (p.get("description") or "").strip()
+    if desc:
+        room = 1000 - len(head) - len("\n".join(store)) - 200
+        if room > 20:
+            head += "\n\n📝 " + e(desc if len(desc) <= room else desc[:room - 1].rstrip() + "…")
+    return head + (("\n\n" + "\n".join(store)) if store else "")
+
+
 def text_hash(p):
     return hashlib.sha256(f"{desc_text(p)}|{wa_url(p)}".encode()).hexdigest()[:20]
 
@@ -567,6 +598,14 @@ def run(state=None):
                 old_fp = (row.get("legacy_fingerprint") or "").partition(":")[0]
                 if old_fp != legacy_fingerprint(p):
                     queue.append((1, "republished", pid, p, row))
+                elif row.get("text_hash") != "legacy:" + text_hash(p) and row["message_ids"]:
+                    # убрать из старой подписи подсказку по реакциям (кнопки будут у новых объявлений)
+                    if not DRY_RUN and try_tg("editMessageCaption", {
+                            "chat_id": TG_CHANNEL, "message_id": row["message_ids"][0],
+                            "caption": legacy_caption(p), "parse_mode": "HTML"}):
+                        state.save_post({**row, "text_hash": "legacy:" + text_hash(p)})
+                        stats["edited"] += 1
+                        log.info("Подпись старого поста товара %s очищена", pid)
                 elif MIGRATE_PER_RUN > 0:
                     queue.append((2, "migrated", pid, p, row))
             else:
