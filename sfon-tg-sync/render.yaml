@@ -24,6 +24,10 @@ services:
         fromDatabase:
           name: sfon-sync-db
           property: connectionString
+      - key: NUR_DB_URL
+        fromDatabase:
+          name: nur-db
+          property: connectionString
 
   - type: cron
     name: sfon-telegram-sync-shymkent
@@ -53,6 +57,10 @@ services:
       - key: DATABASE_URL
         fromDatabase:
           name: sfon-sync-db
+          property: connectionString
+      - key: NUR_DB_URL
+        fromDatabase:
+          name: nur-db
           property: connectionString
 
 databases:
