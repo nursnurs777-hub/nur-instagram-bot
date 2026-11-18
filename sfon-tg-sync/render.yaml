@@ -48,6 +48,8 @@ services:
         value: "0"
       - key: TABLE_NAME
         value: posts_shymkent
+      - key: SHOW_YEAR
+        value: "0"
       - key: DATABASE_URL
         fromDatabase:
           name: sfon-sync-db

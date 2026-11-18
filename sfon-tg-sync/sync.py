@@ -41,7 +41,8 @@ STORE_ID = os.environ.get("SFON_STORE_ID")                # только оди�
 
 # Номер WhatsApp для ссылки под постом (если не задан — берётся WhatsApp магазина из SFON)
 WHATSAPP_NUMBER = os.environ.get("WHATSAPP_NUMBER", "")
-SHOW_STORE_NAME = os.environ.get("SHOW_STORE_NAME", "0") == "1"   # название склада («Основной») не показываем
+SHOW_STORE_NAME = os.environ.get("SHOW_STORE_NAME", "0") == "1"
+SHOW_YEAR = os.environ.get("SHOW_YEAR", "1") == "1"   # показывать год выпуска в посте   # название склада («Основной») не показываем
 
 DB_PATH = os.environ.get("DB_PATH", "state.sqlite3")
 DATABASE_URL = os.environ.get("DATABASE_URL")             # если задан — храним состояние в Postgres
@@ -218,7 +219,7 @@ def caption(p):
         lines.append(f"🎨 Цвет: {e(p['colorName'])}")
     if p.get("batteryState") is not None:
         lines.append(f"🔋 Аккумулятор: {e(p['batteryState'])}%")
-    if p.get("year"):
+    if SHOW_YEAR and p.get("year"):
         lines.append(f"📅 Год: {e(p['year'])}")
     lines.append("♻️ Состояние: б/у")
 
