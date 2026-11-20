@@ -44,6 +44,11 @@ ALERTS: list[tuple[re.Pattern, str | None, str]] = [
 ]
 
 
+BILLING_ALERT = ("🔴 Закончились деньги на балансе Anthropic (ИИ) — бот НЕ отвечает клиентам в обоих филиалах, "
+                 "им уходит «Извините… напишите в WhatsApp». Пополните баланс: console.anthropic.com → "
+                 "Plans & Billing. После пополнения бот сам ответит на пропущенные сообщения.")
+
+
 class TelegramNotifier:
     def __init__(self, token: str, chat_ids: list[str]):
         self.token = token
@@ -153,6 +158,12 @@ class TelegramLogHandler(logging.Handler):
         try:
             msg = record.getMessage()
         except Exception:
+            return
+        exc = str(record.exc_info[1]) if record.exc_info and record.exc_info[1] else ""
+        if "credit balance is too low" in exc:
+            # одна понятная тревога вместо сообщения по каждому клиенту
+            self.n.counters["errors"] = self.n.counters.get("errors", 0) + 1
+            self.n.notify(BILLING_ALERT)
             return
         for rx, text, counter in ALERTS:
             m = rx.search(msg)

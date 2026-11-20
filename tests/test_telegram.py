@@ -76,3 +76,21 @@ def test_unread_price_sheet_alert():
     h.emit(rec)
     text, _ = n._queue.get_nowait()
     assert "«iphone»" in text and "нет колонки «Модель»" in text and "SID123" in text
+
+
+def test_billing_error_sends_one_alert():
+    import logging
+    from app.telegram import TelegramNotifier, TelegramLogHandler, BILLING_ALERT
+    n = TelegramNotifier("t", ["1"])
+    h = TelegramLogHandler(n)
+    lg = logging.getLogger("app.processor.billtest")
+    lg.addHandler(h); lg.propagate = False
+    for uid in ("a", "b", "c"):
+        try:
+            raise RuntimeError("Error code: 400 - Your credit balance is too low to access the Anthropic API")
+        except RuntimeError:
+            lg.exception("Ошибка генерации ответа для %s", uid)
+    sent = []
+    while not n._queue.empty():
+        sent.append(n._queue.get_nowait()[0])
+    assert sent == [BILLING_ALERT]
