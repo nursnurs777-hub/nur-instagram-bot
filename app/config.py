@@ -69,7 +69,7 @@ class Settings:
     web_search_enabled: bool = field(default_factory=lambda: _bool("WEB_SEARCH_ENABLED", True))
     web_search_tool_type: str = field(default_factory=lambda: _env("WEB_SEARCH_TOOL_TYPE", "web_search_20250305"))
     web_search_domains: list[str] = field(
-        default_factory=lambda: _list("WEB_SEARCH_DOMAINS") or ["apple.com", "support.apple.com"])
+        default_factory=lambda: _list("WEB_SEARCH_DOMAINS") or ["apple.com", "support.apple.com", "samsung.com"])
 
     # Google Sheets
     spreadsheet_id: str = field(default_factory=lambda: _env("SPREADSHEET_ID"))

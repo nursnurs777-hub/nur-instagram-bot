@@ -369,3 +369,14 @@ def test_note_sheet_is_not_a_price_problem():
     assert Catalog({"Заметки": [["текст"], ["ещё текст"]]}).problems == {}
     broken = [["Товар", "Цена"], ["AirPods 4", "60 000 ₸"]]
     assert Catalog({"AirPods": broken}).problems  # настоящая поломка по-прежнему видна
+
+
+def test_samsung_search_aliases():
+    from app.catalog import Catalog
+    rows = [["Модель", "Цена", "Показать"], ["Galaxy S26 Ultra 512GB", "600 000 ₸", "Да"],
+            ["Galaxy Z Flip8 256GB", "510 000 ₸", "Да"], ["Galaxy Z Fold7 256GB", "750 000 ₸", "Да"]]
+    c = Catalog({"Samsung": rows})
+    assert c.search("самсунг s26 ультра")[0].model == "Galaxy S26 Ultra 512GB"
+    assert c.search("флип 8")[0].model == "Galaxy Z Flip8 256GB"
+    assert c.search("галакси фолд")[0].model == "Galaxy Z Fold7 256GB"
+    assert c.search("эс 26")[0].model == "Galaxy S26 Ultra 512GB"

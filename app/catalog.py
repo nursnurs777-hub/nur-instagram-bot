@@ -44,6 +44,14 @@ _REPLACEMENTS: list[tuple[str, str]] = [
     (_B + r"(свитч)" + _E, "switch"),
     (_B + r"(нинтендо)" + _E, "nintendo"),
     (_B + r"(дрон)" + _E, "drone"),
+    (_B + r"(самсунг|самсунга|samsung)\s*(галакси|гэлакси|galaxy)?" + _E, "galaxy"),
+    (_B + r"(галакси|гэлакси)" + _E, "galaxy"),
+    (_B + r"(фолд|фолде|фолда)" + _E, "fold"),
+    (_B + r"(флип|флипе|флипа)" + _E, "flip"),
+    (_B + r"(таб)" + _E, "tab"),
+    (_B + r"эс\s*(2\d)" + _E, r"s\1"),
+    (_B + r"s\s+(2\d)" + _E, r"s\1"),
+    (_B + r"(fold|flip|watch)(\d)", r"\1 \2"),
 ]
 _COMPILED = [(re.compile(p), r) for p, r in _REPLACEMENTS]
 

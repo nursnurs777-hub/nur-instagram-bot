@@ -214,10 +214,11 @@ class SalesAgent:
         tz = ZoneInfo(self.s.timezone)
         now = datetime.now(tz)
         is_open = self.s.work_hour_start <= now.hour < self.s.work_hour_end
-        ws = ("- web_search — характеристики техники только с apple.com / support.apple.com. Используй для "
-              "сравнений и новых моделей, о которых не уверен. Не ищи там цены магазина."
+        ws = ("- web_search — характеристики техники с официальных сайтов: Apple — apple.com / support.apple.com, "
+              "Samsung — samsung.com. Используй для сравнений и моделей, в характеристиках которых не уверен "
+              "(особенно новые Galaxy S26, Z Fold8, Z Flip8). Не ищи там цены магазина — цены только из прайса."
               if self.s.web_search_enabled else
-              "- Поиска по сайту Apple нет: если не уверен в характеристике, честно скажи об этом.")
+              "- Поиска по официальным сайтам нет: если не уверен в характеристике, честно скажи об этом.")
         runtime = RUNTIME_RULES.format(web_search_line=ws)
         if self.stock is not None:
             runtime += STOCK_RULES.format(whatsapp=self.branch.whatsapp or self.branch.phone or "WhatsApp менеджера")
